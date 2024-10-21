@@ -194,6 +194,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   double get totalMacros => carbs + protein + calories + fat;
 
   @override
+  @override
   Widget build(BuildContext context) {
     double carbsPercentage = totalMacros > 0 ? (carbs / totalMacros) * 100 : 0;
     double proteinPercentage =
@@ -369,6 +370,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
             onPressed: _showAddMealDialog,
             child: const Icon(Icons.add),
             tooltip: 'Add Meal',
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
           ),
           const SizedBox(width: 16), // Space between buttons
           FloatingActionButton(
@@ -380,6 +382,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
             },
             child: const Icon(Icons.chat),
             tooltip: 'Chat with Google Gemini AI',
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
           ),
         ],
       ),
