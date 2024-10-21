@@ -1,0 +1,18 @@
+# Essential
+lib/                    # Main source code
+pubspec.yaml           # Project dependencies and metadata
+pubspec.lock           # Lock file for dependencies
+README.md             # Project documentation
+assets/               # If you have images, fonts, etc.
+test/                 # Unit/widget tests (recommended)
+
+# Optional but recommended
+analysis_options.yaml  # Linting rules
+.gitignore            # Git ignore rules
+
+# Don't push
+.dart_tool/
+.flutter-plugins
+build/
+ios/Pods/
+android/.gradle/
