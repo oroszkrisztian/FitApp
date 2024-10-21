@@ -1,3 +1,4 @@
+import 'package:fit_app/chat_page.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:image_picker/image_picker.dart';
@@ -361,10 +362,26 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddMealDialog,
-        child: const Icon(Icons.add),
-        tooltip: 'Add Meal',
+      floatingActionButton: Row(
+        mainAxisAlignment: MainAxisAlignment.end, // Align buttons to the end
+        children: [
+          FloatingActionButton(
+            onPressed: _showAddMealDialog,
+            child: const Icon(Icons.add),
+            tooltip: 'Add Meal',
+          ),
+          const SizedBox(width: 16), // Space between buttons
+          FloatingActionButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => ChatPage()),
+              );
+            },
+            child: const Icon(Icons.chat),
+            tooltip: 'Chat with Google Gemini AI',
+          ),
+        ],
       ),
     );
   }
