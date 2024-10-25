@@ -86,121 +86,181 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   }
 
   void _showAddMealDialog() {
-    String mealName = '';
+  String mealName = '';
 
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Add Meal'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      decoration: const InputDecoration(labelText: 'Meal Name'),
-                      onChanged: (value) {
-                        mealName = value;
-                      },
+  showDialog(
+    context: context,
+    barrierColor: Colors.black26, // Less dark barrier
+    barrierDismissible: true, // Allow dismissing by tapping outside
+    builder: (BuildContext context) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return Dialog(
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            elevation: 8,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Add Meal',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Meal Name',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
                     ),
-                    TextField(
-                      decoration: const InputDecoration(labelText: 'Carbs'),
-                      keyboardType: TextInputType.number,
-                      controller:
-                          TextEditingController(text: mealCarbs.toString()),
-                      onChanged: (value) {
-                        mealCarbs = double.tryParse(value) ?? 0;
-                      },
+                    onChanged: (value) {
+                      mealName = value;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Carbs',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
                     ),
-                    TextField(
-                      decoration: const InputDecoration(labelText: 'Protein'),
-                      keyboardType: TextInputType.number,
-                      controller:
-                          TextEditingController(text: mealProtein.toString()),
-                      onChanged: (value) {
-                        mealProtein = double.tryParse(value) ?? 0;
-                      },
+                    keyboardType: TextInputType.number,
+                    controller: TextEditingController(text: mealCarbs.toString()),
+                    onChanged: (value) {
+                      mealCarbs = double.tryParse(value) ?? 0;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Protein',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
                     ),
-                    TextField(
-                      decoration: const InputDecoration(labelText: 'Calories'),
-                      keyboardType: TextInputType.number,
-                      controller:
-                          TextEditingController(text: mealCalories.toString()),
-                      onChanged: (value) {
-                        mealCalories = double.tryParse(value) ?? 0;
-                      },
+                    keyboardType: TextInputType.number,
+                    controller: TextEditingController(text: mealProtein.toString()),
+                    onChanged: (value) {
+                      mealProtein = double.tryParse(value) ?? 0;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Calories',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
                     ),
-                    TextField(
-                      decoration: const InputDecoration(labelText: 'Fat'),
-                      keyboardType: TextInputType.number,
-                      controller:
-                          TextEditingController(text: mealFat.toString()),
-                      onChanged: (value) {
-                        mealFat = double.tryParse(value) ?? 0;
-                      },
+                    keyboardType: TextInputType.number,
+                    controller: TextEditingController(text: mealCalories.toString()),
+                    onChanged: (value) {
+                      mealCalories = double.tryParse(value) ?? 0;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Fat',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
                     ),
-                    ElevatedButton(
-                      onPressed: () async {
-                        await _captureAndRecognizeText();
-                        setState(
-                            () {}); // Refresh the dialog to show updated values
-                      },
-                      child: const Text('Scan Nutrition Label'),
+                    keyboardType: TextInputType.number,
+                    controller: TextEditingController(text: mealFat.toString()),
+                    onChanged: (value) {
+                      mealFat = double.tryParse(value) ?? 0;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      await _captureAndRecognizeText();
+                      setState(() {}); // Refresh the dialog to show updated values
+                    },
+                    icon: const Icon(Icons.camera_alt),
+                    label: const Text('Scan Nutrition Label'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          if (mealName.isNotEmpty) {
+                            _addMeal(mealName, mealCarbs, mealProtein, mealCalories, mealFat);
+                            // Clear the fields after adding the meal
+                            mealName = '';
+                            mealCarbs = 0;
+                            mealProtein = 0;
+                            mealCalories = 0;
+                            mealFat = 0;
+                            Navigator.of(context).pop();
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    if (mealName.isNotEmpty) {
-                      _addMeal(mealName, mealCarbs, mealProtein, mealCalories,
-                          mealFat);
-                      // Clear the fields after adding the meal
-                      mealName = '';
-                      mealCarbs = 0;
-                      mealProtein = 0;
-                      mealCalories = 0;
-                      mealFat = 0;
-
-                      Navigator.of(context).pop();
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        Theme.of(context).colorScheme.inversePrimary,
-                  ),
-                  child: const Text(
-                    'Add',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
+            ),
+          );
+        },
+      );
+    },
+  );
+}
   double get totalMacros => carbs + protein + calories + fat;
 
-  @override
+  
   @override
   Widget build(BuildContext context) {
     double carbsPercentage = totalMacros > 0 ? (carbs / totalMacros) * 100 : 0;
-    double proteinPercentage =
-        totalMacros > 0 ? (protein / totalMacros) * 100 : 0;
-    double caloriesPercentage =
-        totalMacros > 0 ? (calories / totalMacros) * 100 : 0;
+    double proteinPercentage = totalMacros > 0 ? (protein / totalMacros) * 100 : 0;
+    double caloriesPercentage = totalMacros > 0 ? (calories / totalMacros) * 100 : 0;
     double fatPercentage = totalMacros > 0 ? (fat / totalMacros) * 100 : 0;
 
     return Scaffold(
@@ -265,8 +325,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                                     PieChartSectionData(
                                       value: carbsPercentage,
                                       color: Colors.blue,
-                                      title:
-                                          '${carbsPercentage.toStringAsFixed(1)}%',
+                                      title: '${carbsPercentage.toStringAsFixed(1)}%',
                                       titleStyle: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
@@ -277,8 +336,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                                     PieChartSectionData(
                                       value: proteinPercentage,
                                       color: Colors.red,
-                                      title:
-                                          '${proteinPercentage.toStringAsFixed(1)}%',
+                                      title: '${proteinPercentage.toStringAsFixed(1)}%',
                                       titleStyle: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
@@ -289,8 +347,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                                     PieChartSectionData(
                                       value: caloriesPercentage,
                                       color: Colors.orangeAccent,
-                                      title:
-                                          '${caloriesPercentage.toStringAsFixed(1)}%',
+                                      title: '${caloriesPercentage.toStringAsFixed(1)}%',
                                       titleStyle: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
@@ -301,8 +358,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                                     PieChartSectionData(
                                       value: fatPercentage,
                                       color: Colors.green,
-                                      title:
-                                          '${fatPercentage.toStringAsFixed(1)}%',
+                                      title: '${fatPercentage.toStringAsFixed(1)}%',
                                       titleStyle: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
@@ -329,8 +385,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                                 ),
                                 Text(
                                   'Calories: ${caloriesPercentage.toStringAsFixed(1)}%',
-                                  style: const TextStyle(
-                                      color: Colors.orangeAccent),
+                                  style: const TextStyle(color: Colors.orangeAccent),
                                 ),
                                 Text(
                                   'Fat: ${fatPercentage.toStringAsFixed(1)}%',
@@ -363,29 +418,34 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
           ],
         ),
       ),
-      floatingActionButton: Row(
-        mainAxisAlignment: MainAxisAlignment.end, // Align buttons to the end
-        children: [
-          FloatingActionButton(
-            onPressed: _showAddMealDialog,
-            child: const Icon(Icons.add),
-            tooltip: 'Add Meal',
-            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-          ),
-          const SizedBox(width: 16), // Space between buttons
-          FloatingActionButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => ChatPage()),
-              );
-            },
-            child: const Icon(Icons.chat),
-            tooltip: 'Chat with Google Gemini AI',
-            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-          ),
-        ],
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 16.0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            FloatingActionButton(
+              heroTag: 'addMeal',  // Added unique hero tag
+              onPressed: _showAddMealDialog,
+              child: const Icon(Icons.add),
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            ),
+            const SizedBox(width: 16),
+            FloatingActionButton(
+              heroTag: 'chat',  // Added unique hero tag
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ChatPage()),
+                );
+              },
+              child: const Icon(Icons.chat),
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+            ),
+          ],
+        ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }
