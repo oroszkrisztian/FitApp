@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+bcrypt
+mysql-connector-python
+sqlalchemy
