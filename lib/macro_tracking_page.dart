@@ -40,7 +40,8 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   void _initializeGemini() {
     _geminiModel = GenerativeModel(
       model: 'gemini-pro',
-      apiKey: 'AIzaSyDI7Bjn6HTZllGHPEtxdmLas9HNlNLnOco', // Replace with your API key
+      apiKey:
+          'AIzaSyDI7Bjn6HTZllGHPEtxdmLas9HNlNLnOco', // Replace with your API key
     );
   }
 
@@ -140,10 +141,30 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
 
   void _showAddMealDialog() {
     String mealName = '';
-    final carbsController = TextEditingController(text: mealCarbs.toString());
-    final proteinController = TextEditingController(text: mealProtein.toString());
-    final caloriesController = TextEditingController(text: mealCalories.toString());
-    final fatController = TextEditingController(text: mealFat.toString());
+    double mealQuantity = 0;
+    bool showNutritionFields = false;
+
+    // Controllers for per 100g values
+    final per100gCarbsController = TextEditingController();
+    final per100gProteinController = TextEditingController();
+    final per100gCaloriesController = TextEditingController();
+    final per100gFatController = TextEditingController();
+
+    // Per 100g values
+    double per100gCarbs = 0;
+    double per100gProtein = 0;
+    double per100gCalories = 0;
+    double per100gFat = 0;
+
+    void calculateNutritionForQuantity() {
+      if (mealQuantity > 0) {
+        double ratio = mealQuantity / 100;
+        mealCarbs = per100gCarbs * ratio;
+        mealProtein = per100gProtein * ratio;
+        mealCalories = per100gCalories * ratio;
+        mealFat = per100gFat * ratio;
+      }
+    }
 
     showDialog(
       context: context,
@@ -197,7 +218,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                       const SizedBox(height: 12),
                       TextField(
                         decoration: InputDecoration(
-                          labelText: 'Carbs',
+                          labelText: 'Quantity (grams)',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -205,132 +226,213 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                           fillColor: Colors.white,
                         ),
                         keyboardType: TextInputType.number,
-                        controller: carbsController,
                         onChanged: (value) {
-                          mealCarbs = double.tryParse(value) ?? 0;
+                          mealQuantity = double.tryParse(value) ?? 0;
+                          calculateNutritionForQuantity();
+                          setDialogState(() {});
                         },
                       ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        decoration: InputDecoration(
-                          labelText: 'Protein',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                      if (!showNutritionFields) ...[
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () {
+                            if (mealName.isNotEmpty && mealQuantity > 0) {
+                              setDialogState(() {
+                                showNutritionFields = true;
+                              });
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primary,
+                            foregroundColor: Colors.white,
                           ),
-                          filled: true,
-                          fillColor: Colors.white,
+                          child: const Text('Next'),
                         ),
-                        keyboardType: TextInputType.number,
-                        controller: proteinController,
-                        onChanged: (value) {
-                          mealProtein = double.tryParse(value) ?? 0;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        decoration: InputDecoration(
-                          labelText: 'Calories',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                      ],
+                      if (showNutritionFields) ...[
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            final XFile? image = await _picker.pickImage(
+                                source: ImageSource.camera);
+                            if (image != null) {
+                              final inputImage =
+                                  InputImage.fromFilePath(image.path);
+                              final RecognizedText recognizedText =
+                                  await _textRecognizer
+                                      .processImage(inputImage);
+
+                              final nutritionInfo =
+                                  await _extractNutritionWithGemini(
+                                      recognizedText.text);
+
+                              print('Extracted Nutrition Values (per 100g):');
+                              print('Calories: ${nutritionInfo['calories']}');
+                              print('Carbs: ${nutritionInfo['carbs']}g');
+                              print('Protein: ${nutritionInfo['protein']}g');
+                              print('Fat: ${nutritionInfo['fat']}g');
+
+                              setDialogState(() {
+                                per100gCarbs = nutritionInfo['carbs'] ?? 0;
+                                per100gProtein = nutritionInfo['protein'] ?? 0;
+                                per100gCalories =
+                                    nutritionInfo['calories'] ?? 0;
+                                per100gFat = nutritionInfo['fat'] ?? 0;
+
+                                // Update controllers with the new values
+                                per100gCarbsController.text =
+                                    per100gCarbs.toString();
+                                per100gProteinController.text =
+                                    per100gProtein.toString();
+                                per100gCaloriesController.text =
+                                    per100gCalories.toString();
+                                per100gFatController.text =
+                                    per100gFat.toString();
+
+                                calculateNutritionForQuantity();
+                              });
+                            }
+                          },
+                          icon: const Icon(Icons.camera_alt),
+                          label: const Text('Scan Nutrition Label (per 100g)'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
                           ),
-                          filled: true,
-                          fillColor: Colors.white,
                         ),
-                        keyboardType: TextInputType.number,
-                        controller: caloriesController,
-                        onChanged: (value) {
-                          mealCalories = double.tryParse(value) ?? 0;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        decoration: InputDecoration(
-                          labelText: 'Fat',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Nutrition Values (per 100g)',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
                           ),
-                          filled: true,
-                          fillColor: Colors.white,
                         ),
-                        keyboardType: TextInputType.number,
-                        controller: fatController,
-                        onChanged: (value) {
-                          mealFat = double.tryParse(value) ?? 0;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        onPressed: () async {
-                          final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-                          if (image != null) {
-                            final inputImage = InputImage.fromFilePath(image.path);
-                            final RecognizedText recognizedText = 
-                                await _textRecognizer.processImage(inputImage);
-                            
-                            // Extract nutrition info using Gemini
-                            final nutritionInfo = await _extractNutritionWithGemini(recognizedText.text);
-                            
-                            // Log values to console
-                            print('Extracted Nutrition Values:');
-                            print('Calories: ${nutritionInfo['calories']}');
-                            print('Carbs: ${nutritionInfo['carbs']}g');
-                            print('Protein: ${nutritionInfo['protein']}g');
-                            print('Fat: ${nutritionInfo['fat']}g');
-                            
-                            // Update the text fields with the extracted information
-                            setDialogState(() {
-                              mealCarbs = nutritionInfo['carbs'] ?? 0;
-                              mealProtein = nutritionInfo['protein'] ?? 0;
-                              mealCalories = nutritionInfo['calories'] ?? 0;
-                              mealFat = nutritionInfo['fat'] ?? 0;
-                              
-                              // Update controllers
-                              carbsController.text = mealCarbs.toString();
-                              proteinController.text = mealProtein.toString();
-                              caloriesController.text = mealCalories.toString();
-                              fatController.text = mealFat.toString();
-                            });
-                          }
-                        },
-                        icon: const Icon(Icons.camera_alt),
-                        label: const Text('Scan Nutrition Label'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.primary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: const Text('Cancel'),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton(
-                            onPressed: () {
-                              if (mealName.isNotEmpty) {
-                                _addMeal(mealName, mealCarbs, mealProtein,
-                                    mealCalories, mealFat);
-                                // Clear the fields after adding the meal
-                                mealName = '';
-                                mealCarbs = 0;
-                                mealProtein = 0;
-                                mealCalories = 0;
-                                mealFat = 0;
-                                Navigator.of(context).pop();
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Theme.of(context).colorScheme.primary,
-                              foregroundColor: Colors.white,
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: per100gCarbsController,
+                          decoration: InputDecoration(
+                            labelText: 'Carbs per 100g',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Text('Add'),
+                            filled: true,
+                            fillColor: Colors.white,
                           ),
-                        ],
-                      ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            per100gCarbs = double.tryParse(value) ?? 0;
+                            calculateNutritionForQuantity();
+                            setDialogState(() {});
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: per100gProteinController,
+                          decoration: InputDecoration(
+                            labelText: 'Protein per 100g',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            filled: true,
+                            fillColor: Colors.white,
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            per100gProtein = double.tryParse(value) ?? 0;
+                            calculateNutritionForQuantity();
+                            setDialogState(() {});
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: per100gCaloriesController,
+                          decoration: InputDecoration(
+                            labelText: 'Calories per 100g',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            filled: true,
+                            fillColor: Colors.white,
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            per100gCalories = double.tryParse(value) ?? 0;
+                            calculateNutritionForQuantity();
+                            setDialogState(() {});
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: per100gFatController,
+                          decoration: InputDecoration(
+                            labelText: 'Fat per 100g',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            filled: true,
+                            fillColor: Colors.white,
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            per100gFat = double.tryParse(value) ?? 0;
+                            calculateNutritionForQuantity();
+                            setDialogState(() {});
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Calculated values for ${mealQuantity}g:',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                              Text('Carbs: ${mealCarbs.toStringAsFixed(1)}g'),
+                              Text(
+                                  'Protein: ${mealProtein.toStringAsFixed(1)}g'),
+                              Text(
+                                  'Calories: ${mealCalories.toStringAsFixed(1)} kcal'),
+                              Text('Fat: ${mealFat.toStringAsFixed(1)}g'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: () {
+                                if (mealName.isNotEmpty) {
+                                  _addMeal(mealName, mealCarbs, mealProtein,
+                                      mealCalories, mealFat);
+                                  Navigator.of(context).pop();
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    Theme.of(context).colorScheme.primary,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Add'),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -343,7 +445,6 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   }
 
   double get totalMacros => carbs + protein + calories + fat;
-
 
   @override
   Widget build(BuildContext context) {
