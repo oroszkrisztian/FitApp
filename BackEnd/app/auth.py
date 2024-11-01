@@ -2,7 +2,7 @@ import bcrypt
 from sqlalchemy.orm import Session
 from app.models import User, UserProfile
 
-def create_user(db: Session, email: str, password: str, height: float, weight: float, age: int, gender: str):
+def create_user(db: Session, email: str, password: str, height: float, weight: float, age: int, gender: str, username: str):
     # Hash the password
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
@@ -12,7 +12,7 @@ def create_user(db: Session, email: str, password: str, height: float, weight: f
     db.commit()
     db.refresh(user)
 
-    profile = UserProfile(user_id=user.user_id, height=height, weight=weight, age=age, gender=gender)
+    profile = UserProfile(user_id=user.user_id, height=height, weight=weight, age=age, gender=gender, username=username)
     db.add(profile)
     db.commit()
 

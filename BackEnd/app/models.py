@@ -1,32 +1,33 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DECIMAL, Enum
+from sqlalchemy import Column, Integer, String, ForeignKey, DECIMAL, Enum, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
+from datetime import datetime
 
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "Users"  
 
     user_id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, nullable=False)
     password = Column(String(255), nullable=False)
 
-    profile = relationship("UserProfile", back_populates="user", uselist=False)
-    # Kapcsolat a UserFood táblával
-    foods = relationship("UserFood", back_populates="user")
+    profile = relationship("UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    foods = relationship("UserFoodLog", back_populates="user", cascade="all, delete-orphan")
 
 class UserProfile(Base):
-    __tablename__ = "user_profiles"
+    __tablename__ = "User_profiles"  
 
     profile_id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.user_id"))
+    user_id = Column(Integer, ForeignKey("Users.user_id"))  
     height = Column(DECIMAL(5, 2))
     weight = Column(DECIMAL(5, 2))
     age = Column(Integer)
     gender = Column(Enum("male", "female", "other", name="gender"))
+    username = Column(String(50), nullable=False)
 
     user = relationship("User", back_populates="profile")
 
 class Food(Base):
-    __tablename__ = "foods"
+    __tablename__ = "Foods" 
 
     food_id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
@@ -35,18 +36,16 @@ class Food(Base):
     fat = Column(DECIMAL(5, 2))
     carbs = Column(DECIMAL(5, 2))
 
-    # Kapcsolat a UserFood táblával
-    user_foods = relationship("UserFood", back_populates="food")
+    user_foods = relationship("UserFoodLog", back_populates="food") 
 
-class UserFood(Base):
-    __tablename__ = "user_foods"
+class UserFoodLog(Base):
+    __tablename__ = "User_food_logs"
 
-    user_food_id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.user_id"))
-    food_id = Column(Integer, ForeignKey("foods.food_id"))
+    log_id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("Users.user_id"))
+    food_id = Column(Integer, ForeignKey("Foods.food_id"))
     grams = Column(DECIMAL(5, 2))
-    eaten_at = Column(String)  # A dátumot itt szövegként tároljuk, de célszerű DATETIME típusra is alakítani.
+    consumed_at = Column(DateTime, default=datetime.utcnow)
 
-    # Kapcsolat a User és Food táblákkal
     user = relationship("User", back_populates="foods")
     food = relationship("Food", back_populates="user_foods")
