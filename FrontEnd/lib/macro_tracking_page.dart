@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:fit_app/chat_page.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
+import 'package:http/http.dart' as http;
 
 class MacroTrackingPage extends StatefulWidget {
   const MacroTrackingPage({super.key});
@@ -13,6 +16,7 @@ class MacroTrackingPage extends StatefulWidget {
 }
 
 class _MacroTrackingPageState extends State<MacroTrackingPage> {
+  bool _isLoading = false;
   double carbs = 0;
   double protein = 0;
   double calories = 0;
@@ -81,6 +85,23 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     }
   }
 
+  void _showErrorDialog(BuildContext context, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Error',
+            style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Map<String, double> _parseGeminiResponse(String response) {
     Map<String, double> nutritionValues = {
       'carbs': 0,
@@ -117,26 +138,61 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     return match != null ? double.tryParse(match.group(0) ?? '0') ?? 0 : 0;
   }
 
-  void _addMeal(String name, double mealCarbs, double mealProtein,
-      double mealCalories, double mealFat) {
-    setState(() {
-      meals.add({
-        'name': name,
-        'carbs': mealCarbs,
-        'protein': mealProtein,
-        'calories': mealCalories,
-        'fat': mealFat,
-        'nutritionData': nutritionData, // Add the complete nutrition data
-      });
+  Future<void> _addMeal(String name, double mealCarbs, double mealProtein,
+      double mealCalories, double mealFat) async {
+    setState(() => _isLoading = true);
 
-      carbs += mealCarbs;
-      protein += mealProtein;
-      calories += mealCalories;
-      fat += mealFat;
+    final String url = 'http://192.168.15.160:1234/foods/';
 
-      // Reset nutrition data after adding meal
-      nutritionData = '';
-    });
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          //'food_id': 0, // Add this line - assuming 0 for new foods
+          'name': name,
+          'carbs': mealCarbs.toStringAsFixed(2),
+          'protein': mealProtein.toStringAsFixed(2),
+          'calories': mealCalories.toStringAsFixed(2),
+          'fat': mealFat.toStringAsFixed(2),
+        }),
+      );
+
+      print("Response status: ${response.statusCode}");
+      print("Response body: ${response.body}");
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if (!mounted) return;
+
+        setState(() {
+          meals.add({
+            'name': name,
+            'carbs': mealCarbs,
+            'protein': mealProtein,
+            'calories': mealCalories,
+            'fat': mealFat,
+          });
+
+          carbs += mealCarbs;
+          protein += mealProtein;
+          calories += mealCalories;
+          fat += mealFat;
+        });
+      } else {
+        if (!mounted) return;
+        _showErrorDialog(context, 'Failed to save meal: ${response.body}');
+      }
+    } catch (e) {
+      print('Error saving meal: $e');
+      if (!mounted) return;
+      _showErrorDialog(context, 'Error saving meal: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   void _showAddMealDialog() {
@@ -416,19 +472,34 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                             ),
                             const SizedBox(width: 8),
                             ElevatedButton(
-                              onPressed: () {
-                                if (mealName.isNotEmpty) {
-                                  _addMeal(mealName, mealCarbs, mealProtein,
-                                      mealCalories, mealFat);
-                                  Navigator.of(context).pop();
-                                }
-                              },
+                              onPressed: _isLoading
+                                  ? null
+                                  : () async {
+                                      if (mealName.isNotEmpty) {
+                                        await _addMeal(mealName, mealCarbs,
+                                            mealProtein, mealCalories, mealFat);
+                                        if (context.mounted) {
+                                          Navigator.of(context).pop();
+                                        }
+                                      }
+                                    },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor:
                                     Theme.of(context).colorScheme.primary,
                                 foregroundColor: Colors.white,
                               ),
-                              child: const Text('Add'),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.white),
+                                      ),
+                                    )
+                                  : const Text('Add'),
                             ),
                           ],
                         ),
@@ -622,14 +693,14 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             FloatingActionButton(
-              heroTag: 'addMeal', // Added unique hero tag
-              onPressed: _showAddMealDialog,
+              heroTag: 'addMeal',
+              onPressed: _showAddMealDialog, // Just call the dialog function
               child: const Icon(Icons.add),
               backgroundColor: Theme.of(context).colorScheme.inversePrimary,
             ),
             const SizedBox(width: 16),
             FloatingActionButton(
-              heroTag: 'chat', // Added unique hero tag
+              heroTag: 'chat',
               onPressed: () {
                 Navigator.push(
                   context,
