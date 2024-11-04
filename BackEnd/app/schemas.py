@@ -3,15 +3,17 @@ from decimal import Decimal
 from typing import List, Optional
 from datetime import datetime
 
-class FoodBase(BaseModel):
+# Input schema (without food_id) for creation requests
+class FoodCreate(BaseModel):
     name: str
     calories: Decimal
     protein: Decimal
     fat: Decimal
     carbs: Decimal
 
-class Food(FoodBase):
-    food_id: int
+# Output schema (with food_id) for responses
+class FoodResponse(FoodCreate):
+    food_id: int  # Includes `food_id` only in the response
 
     class Config:
         orm_mode = True

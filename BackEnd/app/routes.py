@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.auth import create_user, check_login
 from app.database import get_db
 from app.models import User, Food as FoodModel, UserFoodLog  # Updated imports
-from app.schemas import Food as FoodSchema, UserFood, UserFoodBase, UserProfile  # Updated imports
+from app.schemas import FoodCreate, UserFood, UserFoodBase, UserProfile, FoodResponse  # Updated imports
 from typing import List, Optional
 from datetime import datetime
 
@@ -20,7 +20,7 @@ def read_users(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
-@router.get("/foods/", response_model=List[FoodSchema])  # Use FoodSchema for response
+@router.get("/foods/", response_model=List[FoodResponse])  # Use FoodSchema for response
 def read_foods(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     try:
         foods = db.query(FoodModel).order_by(FoodModel.food_id).offset(skip).limit(limit).all()  # Use FoodModel for querying
@@ -68,13 +68,13 @@ async def login_user(email: str, password: str, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
-@router.post("/foods/", response_model=FoodSchema)  # Use FoodSchema for response
-def create_food(food: FoodSchema, db: Session = Depends(get_db)):  # Accept FoodSchema as input
-    db_food = FoodModel(**food.dict())  # Create FoodModel instance from FoodSchema
+@router.post("/foods/", response_model=FoodResponse)  # Use FoodResponse for response
+def create_food(food: FoodCreate, db: Session = Depends(get_db)):  # Accept FoodCreate as input
+    db_food = FoodModel(**food.dict())  # Create FoodModel instance from FoodCreate
     db.add(db_food)
     db.commit()
     db.refresh(db_food)
-    return db_food  # Returns the FoodModel instance, which will be converted to FoodSchema
+    return db_food
 
 # Log user food consumption
 @router.post("/user-foods/", response_model=UserFood)
