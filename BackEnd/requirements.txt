@@ -1,5 +1,8 @@
 fastapi
-uvicorn
-bcrypt
-mysql-connector-python
+azure-functions
 sqlalchemy
+bcrypt
+pydantic
+python-dotenv
+pyodbc
+uvicorn
