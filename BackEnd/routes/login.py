@@ -11,7 +11,7 @@ router = APIRouter()
 async def login_user(email: str, password: str, db: Session = Depends(get_db)):
     try:
         if check_login(db, email, password):
-            return {"message": "Login successful"}
+            return {"message": "Login successful", "user_id": db.query(User).filter(User.email == email).first().user_id}
         else:
             raise HTTPException(status_code=401, detail="Invalid credentials")
     except Exception as e:
