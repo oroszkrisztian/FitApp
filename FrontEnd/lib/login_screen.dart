@@ -17,13 +17,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login(BuildContext context) async {
     // Directly navigate to the macro tracking page
-    _navigateToMacroTracking(context);
+    //_navigateToMacroTracking(context);
 
-    /* Original backend authentication code
+    /* Original backend authentication code*/
     final String username = _usernameController.text;
     final String password = _passwordController.text;
 
-    final String baseUrl = 'http://192.168.15.160:1234/login/';
+    final String baseUrl = 'https://func-fitapp-backend.azurewebsites.net/login/';
     final uri = Uri.parse(baseUrl).replace(queryParameters: {
       'email': username,
       'password': password,
@@ -57,7 +57,6 @@ class _LoginScreenState extends State<LoginScreen> {
       print('Error: $e');
       _showErrorDialog(context, 'Error connecting to server');
     }
-    */
   }
 
   void _showErrorDialog(BuildContext context, String message) {
