@@ -6,8 +6,8 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
-// Theme constants class for consistent styling
 class ThemeConstants {
   static final inputDecoration = (BuildContext context) => InputDecoration(
         border: OutlineInputBorder(
@@ -69,6 +69,9 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   List<Map<String, dynamic>> meals = [];
   final ImagePicker _picker = ImagePicker();
   final TextRecognizer _textRecognizer = GoogleMlKit.vision.textRecognizer();
+  SharedPreferences? _preferences;
+  DateTime _lastSavedDate = DateTime.now();
+  bool _isInitialized = false;
 
   late final GenerativeModel _geminiModel;
   String nutritionData = '';
@@ -82,13 +85,114 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   void initState() {
     super.initState();
     _initializeGemini();
+    _loadSavedData();
+    _initializeApp();
   }
 
   void _initializeGemini() {
     _geminiModel = GenerativeModel(
       model: 'gemini-pro',
-      apiKey: 'YOUR_API_KEY_HERE',
+      apiKey: 'AIzaSyDI7Bjn6HTZllGHPEtxdmLas9HNlNLnOco',
     );
+  }
+
+  Future<void> _initializeApp() async {
+    try {
+      await _loadSavedData();
+    } catch (e) {
+      print('Error initializing app: $e');
+      // Initialize with default values if SharedPreferences fails
+      _preferences = null;
+      setState(() {
+        meals = [];
+        carbs = 0;
+        protein = 0;
+        calories = 0;
+        fat = 0;
+      });
+    } finally {
+      setState(() {
+        _isInitialized = true;
+      });
+    }
+  }
+
+  Future<void> _loadSavedData() async {
+    try {
+      _preferences = await SharedPreferences.getInstance();
+
+      final savedDateStr = _preferences?.getString('last_saved_date');
+      if (savedDateStr != null) {
+        _lastSavedDate = DateTime.parse(savedDateStr);
+
+        // Check if it's a new day
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final savedDate = DateTime(
+            _lastSavedDate.year, _lastSavedDate.month, _lastSavedDate.day);
+
+        if (today.isAfter(savedDate)) {
+          print('New day detected, resetting data');
+          await _resetData();
+          return;
+        }
+      }
+
+      final savedMealsJson = _preferences?.getString('meals');
+      if (savedMealsJson != null) {
+        final savedMeals = List<Map<String, dynamic>>.from(json
+            .decode(savedMealsJson)
+            .map((x) => Map<String, dynamic>.from(x)));
+
+        setState(() {
+          meals = savedMeals;
+          carbs = _preferences?.getDouble('carbs') ?? 0;
+          protein = _preferences?.getDouble('protein') ?? 0;
+          calories = _preferences?.getDouble('calories') ?? 0;
+          fat = _preferences?.getDouble('fat') ?? 0;
+        });
+      }
+    } catch (e) {
+      print('Error loading saved data: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _saveData() async {
+    if (_preferences == null) return;
+
+    try {
+      final now = DateTime.now();
+      await _preferences?.setString('last_saved_date', now.toIso8601String());
+      await _preferences?.setString('meals', json.encode(meals));
+      await _preferences?.setDouble('carbs', carbs);
+      await _preferences?.setDouble('protein', protein);
+      await _preferences?.setDouble('calories', calories);
+      await _preferences?.setDouble('fat', fat);
+
+      _lastSavedDate = now; // Update the in-memory date after successful save
+    } catch (e) {
+      print('Error saving data: $e');
+    }
+  }
+
+  Future<void> _resetData() async {
+    print('Resetting data at ${DateTime.now()}');
+    setState(() {
+      meals = [];
+      carbs = 0;
+      protein = 0;
+      calories = 0;
+      fat = 0;
+      _lastSavedDate = DateTime.now(); // Update the last saved date
+    });
+    await _saveData();
+  }
+
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 
   Future<Map<String, double>> _extractNutritionWithGemini(String text) async {
@@ -166,6 +270,10 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     double mealCalories,
     double mealFat,
   ) async {
+    if (!_isInitialized) {
+      return;
+    }
+
     setState(() {
       meals.add({
         'name': name,
@@ -175,7 +283,6 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
         'fat': mealFat,
       });
 
-      // Update total macros
       carbs += mealCarbs;
       protein += mealProtein;
       calories += mealCalories;
@@ -183,9 +290,15 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
 
       _isLoading = false;
     });
+
+    await _saveData();
   }
 
-  void _deleteMeal(int index) {
+  Future<void> _deleteMeal(int index) async {
+    if (!_isInitialized) {
+      return;
+    }
+
     setState(() {
       final meal = meals[index];
       carbs -= meal['carbs'];
@@ -194,6 +307,8 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
       fat -= meal['fat'];
       meals.removeAt(index);
     });
+
+    await _saveData();
   }
 
   Widget _buildMacroCard(
@@ -766,19 +881,29 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     );
   }
 
-  double get totalMacros {
-    return carbs +
-        protein +
-        fat; // Note: removed calories from total as it's not a macro
-  }
+  double get totalMacros => carbs + protein + fat;
 
   @override
+  @override
   Widget build(BuildContext context) {
+    if (!_isInitialized) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    final now = DateTime.now();
+    if (!_isSameDay(_lastSavedDate, now)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _resetData();
+      });
+    }
+
     double carbsPercentage = totalMacros > 0 ? (carbs / totalMacros) * 100 : 0;
     double proteinPercentage =
         totalMacros > 0 ? (protein / totalMacros) * 100 : 0;
-    double caloriesPercentage =
-        totalMacros > 0 ? (calories / totalMacros) * 100 : 0;
     double fatPercentage = totalMacros > 0 ? (fat / totalMacros) * 100 : 0;
 
     return Scaffold(
@@ -876,88 +1001,22 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                           ),
                         ],
                       ),
-                      child: Column(
+                      child: GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 1.6,
                         children: [
-                          GridView.count(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 1.6, // Adjusted ratio
-                            children: [
-                              _buildMacroCard(
-                                  'Carbs', carbs, carbsPercentage, Colors.blue),
-                              _buildMacroCard('Protein', protein,
-                                  proteinPercentage, Colors.red),
-                              _buildMacroCard('Calories', calories,
-                                  caloriesPercentage, Colors.orange),
-                              _buildMacroCard(
-                                  'Fat', fat, fatPercentage, Colors.green),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          if (meals.isNotEmpty)
-                            Container(
-                              height: 200,
-                              padding: const EdgeInsets.all(10.0),
-                              child: PieChart(
-                                PieChartData(
-                                  sectionsSpace: 0,
-                                  centerSpaceRadius: 40,
-                                  sections: [
-                                    PieChartSectionData(
-                                      value: carbsPercentage,
-                                      color: Colors.blue,
-                                      title:
-                                          '${carbsPercentage.toStringAsFixed(1)}%',
-                                      radius: 50,
-                                      titleStyle: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    PieChartSectionData(
-                                      value: proteinPercentage,
-                                      color: Colors.red,
-                                      title:
-                                          '${proteinPercentage.toStringAsFixed(1)}%',
-                                      radius: 50,
-                                      titleStyle: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    PieChartSectionData(
-                                      value: caloriesPercentage,
-                                      color: Colors.orange,
-                                      title:
-                                          '${caloriesPercentage.toStringAsFixed(1)}%',
-                                      radius: 50,
-                                      titleStyle: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    PieChartSectionData(
-                                      value: fatPercentage,
-                                      color: Colors.green,
-                                      title:
-                                          '${fatPercentage.toStringAsFixed(1)}%',
-                                      radius: 50,
-                                      titleStyle: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                          _buildMacroCard(
+                              'Carbs', carbs, carbsPercentage, Colors.blue),
+                          _buildMacroCard('Protein', protein, proteinPercentage,
+                              Colors.red),
+                          _buildMacroCard('Calories', calories, 0,
+                              Colors.orange), // Changed percentage for calories
+                          _buildMacroCard(
+                              'Fat', fat, fatPercentage, Colors.green),
                         ],
                       ),
                     ),
@@ -1066,7 +1125,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
           : Container(
               margin: const EdgeInsets.only(bottom: 16),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   FloatingActionButton(
                     heroTag: 'chat',
