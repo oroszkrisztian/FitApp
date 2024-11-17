@@ -1,6 +1,7 @@
 import 'package:fit_app/register_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'macro_tracking_page.dart';
 
@@ -14,16 +15,28 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  @override
+  void initState() {
+    super.initState();
+    _checkLoginStatus();
+  }
+
+  Future<void> _checkLoginStatus() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final int? userId = prefs.getInt('user_id');
+
+    if (userId != null && mounted) {
+      // User is already logged in, navigate to macro tracking page
+      _navigateToMacroTracking(context);
+    }
+  }
 
   Future<void> _login(BuildContext context) async {
-    // Directly navigate to the macro tracking page
-    //_navigateToMacroTracking(context);
-
-    /* Original backend authentication code*/
     final String username = _usernameController.text;
     final String password = _passwordController.text;
 
-    final String baseUrl = 'https://func-fitapp-backend.azurewebsites.net/login/';
+    final String baseUrl =
+        'https://func-fitapp-backend.azurewebsites.net/login/';
     final uri = Uri.parse(baseUrl).replace(queryParameters: {
       'email': username,
       'password': password,
@@ -37,15 +50,22 @@ class _LoginScreenState extends State<LoginScreen> {
         },
       );
 
-      print("username: "+username);
-      print("password: "+password);
+      print("username: $username");
+      print("password: $password");
       print("Response status: ${response.statusCode}");
       print("Response body: ${response.body}");
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         print('Login successful: $data');
-        _navigateToMacroTracking(context);
+
+        // Save user_id to SharedPreferences
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('user_id', data['user_id']);
+
+        if (mounted) {
+          _navigateToMacroTracking(context);
+        }
       } else if (response.statusCode == 401) {
         print('Login failed: Invalid credentials');
         _showErrorDialog(context, 'Invalid email or password');
@@ -57,6 +77,12 @@ class _LoginScreenState extends State<LoginScreen> {
       print('Error: $e');
       _showErrorDialog(context, 'Error connecting to server');
     }
+  }
+
+  // Add logout method
+  static Future<void> logout() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove('user_id');
   }
 
   void _showErrorDialog(BuildContext context, String message) {
@@ -78,7 +104,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _navigateToMacroTracking(BuildContext context) {
-    Navigator.push(
+    Navigator.pushReplacement(
+      // Changed to pushReplacement to prevent going back to login
       context,
       MaterialPageRoute(builder: (context) => const MacroTrackingPage()),
     );

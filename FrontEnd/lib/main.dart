@@ -1,5 +1,6 @@
 
 import 'package:fit_app/login_screen.dart';
+import 'package:fit_app/splash_screen.dart';
 import 'package:flutter/material.dart';
 
 import 'macro_tracking_page.dart';
@@ -27,7 +28,7 @@ class MyApp extends StatelessWidget {
           foregroundColor: Colors.white,
         ),
       ),
-      home: const LoginScreen(),
+      home: const SplashScreen(),
       routes: {
         '/login': (context) => const LoginScreen(),
         '/macroTracking': (context) => const MacroTrackingPage(),

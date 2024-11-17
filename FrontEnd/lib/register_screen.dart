@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:fit_app/macro_tracking_page.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -9,49 +13,193 @@ class RegistrationScreen extends StatefulWidget {
 
 class _RegistrationScreenState extends State<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
-  
+
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _confirmEmailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
   final TextEditingController _heightController = TextEditingController();
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _ageController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
-  
+
   String _selectedGender = 'Male';
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
   Future<void> _register(BuildContext context) async {
     if (_formKey.currentState!.validate()) {
-      // Show loading indicator
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext context) {
-          return const Center(
-            child: CircularProgressIndicator(),
+      try {
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return Center(
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Creating your account...'),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+
+        final baseUrl =
+            'https://func-fitapp-backend.azurewebsites.net/register/';
+        final uri = Uri.parse(baseUrl).replace(
+          queryParameters: {
+            'email': _emailController.text,
+            'password': _passwordController.text,
+            'height': _heightController.text,
+            'weight': _weightController.text,
+            'age': _ageController.text,
+            'gender': _selectedGender,
+            'username': _usernameController.text,
+          },
+        );
+
+        final response = await http.post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        );
+
+        // Remove loading indicator
+        if (context.mounted) {
+          Navigator.pop(context);
+        }
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          final data = json.decode(response.body);
+
+          // Save user data to SharedPreferences
+          final SharedPreferences prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('user_id', data['user_id']);
+          await prefs.setString('username', _usernameController.text);
+
+          if (context.mounted) {
+            // Show success message with custom dialog
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (BuildContext context) {
+                return Dialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.check_circle,
+                          color: Colors.green,
+                          size: 60,
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Registration Successful!',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Welcome, ${_usernameController.text}!',
+                          style: const TextStyle(
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        ElevatedButton(
+                          onPressed: () {
+                            // Navigate to MacroTrackingPage and remove all previous routes
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const MacroTrackingPage(),
+                              ),
+                              (route) => false,
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 32,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Start Tracking'),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          }
+        } else if (response.statusCode == 400) {
+          final error = json.decode(response.body);
+          if (context.mounted) {
+            showDialog(
+              context: context,
+              builder: (BuildContext context) {
+                return AlertDialog(
+                  title: const Text('Registration Failed'),
+                  content: Text(error['detail'] ?? 'Registration failed'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                );
+              },
+            );
+          }
+        } else {
+          throw Exception('Registration failed');
+        }
+      } catch (e) {
+        print('Error during registration: $e');
+        if (context.mounted) {
+          showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: const Text('Error'),
+                content: Text('Registration failed: $e'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK'),
+                  ),
+                ],
+              );
+            },
           );
-        },
-      );
-
-      // Simulate network delay
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Hide loading indicator
-      Navigator.pop(context);
-
-      // Show success message and return to login
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Registration successful!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      await Future.delayed(const Duration(seconds: 1));
-      Navigator.pop(context);
+        }
+      }
     }
   }
 
@@ -68,7 +216,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 40),
-                  
+
                   // Back Button and Title Row
                   Row(
                     children: [
@@ -103,7 +251,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Username Field
                   TextFormField(
                     controller: _usernameController,
@@ -173,7 +321,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     ).copyWith(
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                          _obscurePassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
                           color: Colors.grey,
                         ),
                         onPressed: () {
@@ -206,7 +356,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     ).copyWith(
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
+                          _obscureConfirmPassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
                           color: Colors.grey,
                         ),
                         onPressed: () {
@@ -362,7 +514,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   const SizedBox(height: 24),
 
                   // Terms and Privacy
-                  
+
                   const SizedBox(height: 40),
                 ],
               ),
@@ -373,7 +525,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     );
   }
 
-  InputDecoration _buildInputDecoration(String label, IconData icon, String hint) {
+  InputDecoration _buildInputDecoration(
+      String label, IconData icon, String hint) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
@@ -388,7 +541,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
+        borderSide:
+            BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
       ),
       filled: true,
       fillColor: Colors.grey.shade50,

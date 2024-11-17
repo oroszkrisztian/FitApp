@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:fit_app/chat_page.dart';
+import 'package:fit_app/login_screen.dart';
+import 'package:fit_app/user_page.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
@@ -72,6 +74,8 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   SharedPreferences? _preferences;
   DateTime _lastSavedDate = DateTime.now();
   bool _isInitialized = false;
+  String _username = 'User';
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   late final GenerativeModel _geminiModel;
   String nutritionData = '';
@@ -87,6 +91,17 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     _initializeGemini();
     _loadSavedData();
     _initializeApp();
+    _loadUsername();
+  }
+
+  Future<void> _loadUsername() async {
+    final prefs = await SharedPreferences.getInstance();
+    final username = prefs.getString('username');
+    if (username != null) {
+      setState(() {
+        _username = username;
+      });
+    }
   }
 
   void _initializeGemini() {
@@ -270,28 +285,124 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     double mealCalories,
     double mealFat,
   ) async {
-    if (!_isInitialized) {
-      return;
-    }
+    if (!_isInitialized) return;
 
-    setState(() {
-      meals.add({
-        'name': name,
-        'carbs': mealCarbs,
-        'protein': mealProtein,
-        'calories': mealCalories,
-        'fat': mealFat,
+    try {
+      // Get user_id from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt('user_id');
+
+      if (userId == null) {
+        print('User ID not found, logging out...');
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (route) => false,
+          );
+        }
+        return;
+      }
+
+      // Prepare the request with query parameters
+      final baseUrl = 'https://func-fitapp-backend.azurewebsites.net/foods/';
+      final uri = Uri.parse(baseUrl).replace(
+        queryParameters: {
+          'user_id': userId.toString(),
+          'grams': '100.0', // Since we're storing per 100g values
+        },
+      );
+
+      // Body only contains food data
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'name': name.toLowerCase(),
+          'carbs': mealCarbs,
+          'protein': mealProtein,
+          'calories': mealCalories,
+          'fat': mealFat,
+        }),
+      );
+
+      print('Request URL: ${uri.toString()}');
+      print('Request Body: ${json.encode({
+            'name': name.toLowerCase(),
+            'carbs': mealCarbs,
+            'protein': mealProtein,
+            'calories': mealCalories,
+            'fat': mealFat,
+          })}');
+      print('Response Status: ${response.statusCode}');
+      print('Response Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        // Update local state
+        setState(() {
+          meals.add({
+            'name': name,
+            'carbs': mealCarbs,
+            'protein': mealProtein,
+            'calories': mealCalories,
+            'fat': mealFat,
+          });
+
+          carbs += mealCarbs;
+          protein += mealProtein;
+          calories += mealCalories;
+          fat += mealFat;
+
+          _isLoading = false;
+        });
+
+        // Save to local storage
+        await _saveData();
+
+        print('Meal added successfully to server and local storage');
+      } else {
+        print('Failed to add meal to server: ${response.body}');
+        throw Exception('Failed to add meal to server');
+      }
+    } catch (e) {
+      print('Error adding meal: $e');
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Error'),
+            content: Text('Failed to add meal: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+
+      // Still save locally even if server fails
+      setState(() {
+        meals.add({
+          'name': name,
+          'carbs': mealCarbs,
+          'protein': mealProtein,
+          'calories': mealCalories,
+          'fat': mealFat,
+        });
+
+        carbs += mealCarbs;
+        protein += mealProtein;
+        calories += mealCalories;
+        fat += mealFat;
+
+        _isLoading = false;
       });
-
-      carbs += mealCarbs;
-      protein += mealProtein;
-      calories += mealCalories;
-      fat += mealFat;
-
-      _isLoading = false;
-    });
-
-    await _saveData();
+      await _saveData();
+    }
   }
 
   Future<void> _deleteMeal(int index) async {
@@ -884,7 +995,6 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   double get totalMacros => carbs + protein + fat;
 
   @override
-  @override
   Widget build(BuildContext context) {
     if (!_isInitialized) {
       return const Scaffold(
@@ -907,13 +1017,105 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     double fatPercentage = totalMacros > 0 ? (fat / totalMacros) * 100 : 0;
 
     return Scaffold(
+      key:
+          _scaffoldKey, // Optional: You can use this if you prefer using GlobalKey approach
       backgroundColor: Colors.grey[50],
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.inversePrimary,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircleAvatar(
+                    radius: 40,
+                    backgroundColor: Colors.white,
+                    child: Icon(Icons.person, size: 40, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Welcome, $_username!',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: const Text('Profile'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const UserPage()),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_today),
+              title: const Text('Calendar'),
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.analytics),
+              title: const Text('Analytics'),
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.chat),
+              title: const Text('Chat'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ChatPage()),
+                );
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Logout', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                Navigator.pop(context);
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.remove('user_id');
+                if (mounted) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                        builder: (context) => const LoginScreen()),
+                    (route) => false,
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      ),
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios),
-          onPressed: () => Navigator.pop(context),
+        leading: Builder(
+          builder: (context) {
+            return IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            );
+          },
         ),
         title: const Text(
           'Macro Tracker',
@@ -923,20 +1125,6 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
           ),
         ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.calendar_today),
-            onPressed: () {
-              // Add date picker functionality
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.analytics),
-            onPressed: () {
-              // Add analytics/stats view
-            },
-          ),
-        ],
       ),
       body: Container(
         width: double.infinity,
@@ -979,9 +1167,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                             color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
-                        onPressed: () {
-                          // Add detailed stats view
-                        },
+                        onPressed: () {},
                       ),
                     ],
                   ),
@@ -995,7 +1181,6 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                         boxShadow: [
                           BoxShadow(
                             color: Colors.grey.withOpacity(0.1),
-                            spreadRadius: 0,
                             blurRadius: 10,
                             offset: const Offset(0, 2),
                           ),
@@ -1013,8 +1198,8 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                               'Carbs', carbs, carbsPercentage, Colors.blue),
                           _buildMacroCard('Protein', protein, proteinPercentage,
                               Colors.red),
-                          _buildMacroCard('Calories', calories, 0,
-                              Colors.orange), // Changed percentage for calories
+                          _buildMacroCard(
+                              'Calories', calories, 0, Colors.orange),
                           _buildMacroCard(
                               'Fat', fat, fatPercentage, Colors.green),
                         ],
@@ -1069,36 +1254,10 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                               ),
                             ),
                             const SizedBox(height: 12),
-                            Text(
-                              'Start tracking your nutrition by adding a meal',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            const SizedBox(height: 32),
                             ElevatedButton.icon(
                               icon: const Icon(Icons.add),
                               label: const Text('Add First Meal'),
                               onPressed: _showAddMealDialog,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    Theme.of(context).colorScheme.primary,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 32,
-                                  vertical: 16,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                elevation: 2,
-                                textStyle: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
                             ),
                           ],
                         ),
@@ -1120,28 +1279,6 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
           ],
         ),
       ),
-      floatingActionButton: meals.isEmpty
-          ? null
-          : Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  FloatingActionButton(
-                    heroTag: 'chat',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => ChatPage()),
-                      );
-                    },
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    child: const Icon(Icons.chat),
-                    elevation: 4,
-                  ),
-                ],
-              ),
-            ),
     );
   }
 
