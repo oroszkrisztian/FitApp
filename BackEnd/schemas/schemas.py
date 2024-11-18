@@ -43,3 +43,22 @@ class UserFood(UserFoodBase):
 
     class Config:
         orm_mode = True
+
+class UserResponse(BaseModel):
+    email: str
+    password: str
+
+    class Config:
+        orm_mode = True
+
+class UserProfileResponse(BaseModel):
+    user_id: int
+    height: float
+    weight: float
+    age: int
+    gender: str
+    username: str
+    user: UserResponse
+
+    class Config:
+        orm_mode = True
