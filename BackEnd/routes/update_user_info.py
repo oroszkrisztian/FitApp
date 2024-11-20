@@ -21,7 +21,7 @@ def update_user_info(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Update User table fields
+    # Update User table fields1
     if email is not None:
         user.email = email
     if password is not None:
