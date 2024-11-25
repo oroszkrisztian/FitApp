@@ -80,6 +80,8 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   late final GenerativeModel _geminiModel;
   String nutritionData = '';
 
+
+
   double mealCarbs = 0;
   double mealProtein = 0;
   double mealCalories = 0;
@@ -96,14 +98,13 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
 
   Future<void> _loadUsername() async {
     final prefs = await SharedPreferences.getInstance();
-    final username = prefs.getString('username');
+    final username = prefs.getString('username');  // Fetch the username from SharedPreferences
     if (username != null) {
       setState(() {
-        _username = username;
+        _username = username;  // Update the state with the loaded username
       });
     }
   }
-
   void _initializeGemini() {
     _geminiModel = GenerativeModel(
       model: 'gemini-pro',

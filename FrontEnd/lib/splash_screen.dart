@@ -1,7 +1,9 @@
-import 'package:fit_app/login_screen.dart';
-import 'package:fit_app/macro_tracking_page.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:fit_app/login_screen.dart';
+import 'package:fit_app/macro_tracking_page.dart';
+import 'models/user_model.dart'; // Import the User model
+
 import 'dart:async';
 
 class SplashScreen extends StatefulWidget {
@@ -35,7 +37,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Add minimum splash screen duration
     Timer(const Duration(seconds: 2), () {
-      _checkLoginStatus();
+      _fetchUserAndNavigate();
     });
   }
 
@@ -45,16 +47,44 @@ class _SplashScreenState extends State<SplashScreen>
     super.dispose();
   }
 
-  Future<void> _checkLoginStatus() async {
+  Future<void> _fetchUserAndNavigate() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final int? userId = prefs.getInt('user_id');
+    print(userId);
+    if (userId != null) {
+      try {
+        final user = await UserModel.fetchUser(userId); // Fetch user data
+        if (user != null && mounted) {
+          // Log the user data
+          print('Fetched User Data:');
+          print('User ID: ${user.userId}');
+          print('Name: ${user.username}');
+          print('Email: ${user.email}');
+          print('Height: ${user.height}');
+          print('Weight: ${user.weight}');
+          print('Age: ${user.age}');
+          print('Gender: ${user.gender}');
 
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const MacroTrackingPage(),
+            ),
+          );
+          return;
+        }
+      } catch (error) {
+        print('Error fetching user: $error');
+      }
+    }
+
+
+    // Navigate to login screen if no user is found or error occurs
     if (mounted) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) =>
-              userId != null ? const MacroTrackingPage() : const LoginScreen(),
+          builder: (context) => const LoginScreen(),
         ),
       );
     }
@@ -106,9 +136,9 @@ class _SplashScreenState extends State<SplashScreen>
                   Text(
                     'FitApp',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
                   const SizedBox(height: 32),
                   const SizedBox(

@@ -5,37 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fit_app/services/user_update.dart';
 import 'package:http/http.dart' as http;
 
-class UserProfileResponse {
-  int? userId;
-  String? name;
-  String? email;
-  double? height;
-  double? weight;
-  int? age;
-  String? gender;
 
-  UserProfileResponse({
-    this.userId,
-    this.name,
-    this.email,
-    this.height,
-    this.weight,
-    this.age,
-    this.gender,
-  });
-
-  factory UserProfileResponse.fromJson(Map<String, dynamic> json) {
-    return UserProfileResponse(
-      userId: json['user_id'],
-      name: json['name'],
-      email: json['email'],
-      height: json['height'],
-      weight: json['weight'],
-      age: json['age'],
-      gender: json['gender'],
-    );
-  }
-}
 
 class UserPage extends StatefulWidget {
   const UserPage({super.key});
