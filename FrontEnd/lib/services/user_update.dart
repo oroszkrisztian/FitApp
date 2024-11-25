@@ -13,39 +13,32 @@ class UserUpdate {
     int? age,
     String? gender,
   }) async {
-    final url = 'https://func-fitapp-backend.azurewebsites.net/update/$userId/';  // Added trailing slash
-
     try {
-      Map<String, dynamic> requestBody = {};
-      if (email != null) requestBody['email'] = email;
-      if (password != null) requestBody['password'] = password;
-      if (height != null) requestBody['height'] = height;
-      if (weight != null) requestBody['weight'] = weight;
-      if (age != null) requestBody['age'] = age;
-      if (gender != null) requestBody['gender'] = gender;
+      final baseUrl = 'https://func-fitapp-backend.azurewebsites.net/update/$userId';
 
-      print('Update Request URL: $url');
-      print('Update Request Body: ${jsonEncode(requestBody)}');
+      // Build query parameters
+      final queryParameters = <String, String>{};
+      if (email != null) queryParameters['email'] = email;
+      if (password != null) queryParameters['password'] = password;
+      if (height != null) queryParameters['height'] = height.toString();
+      if (weight != null) queryParameters['weight'] = weight.toString();
+      if (age != null) queryParameters['age'] = age.toString();
+      if (gender != null) queryParameters['gender'] = gender;
+
+      final uri = Uri.parse(baseUrl).replace(queryParameters: queryParameters);
+
+      print('Update Request URL: $uri');
 
       final response = await http.put(
-        Uri.parse(url),
+        uri,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(requestBody),
       );
 
       print('Update Response Status: ${response.statusCode}');
       print('Update Response Body: ${response.body}');
 
-      // Verify the update was successful by fetching updated data
-      final verificationResponse = await http.get(
-        Uri.parse('https://func-fitapp-backend.azurewebsites.net/users/$userId/'),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      print('Verification Response: ${verificationResponse.body}');
-
       if (response.statusCode != 200) {
-        throw Exception('Failed to update: ${response.body}');
+        throw Exception('Failed to update: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       print('Update Error: $e');
