@@ -5,8 +5,15 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="80774a56-3abb-47ff-9e77-f8a0440d398c" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/BackEnd/app/database.py" beforeDir="false" afterPath="$PROJECT_DIR$/BackEnd/app/database.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/BackEnd/app/routes.py" beforeDir="false" afterPath="$PROJECT_DIR$/BackEnd/app/routes.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/FrontEnd/.flutter-plugins-dependencies" beforeDir="false" afterPath="$PROJECT_DIR$/FrontEnd/.flutter-plugins-dependencies" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/FrontEnd/.idea/libraries/Flutter_Plugins.xml" beforeDir="false" afterPath="$PROJECT_DIR$/FrontEnd/.idea/libraries/Flutter_Plugins.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/FrontEnd/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/FrontEnd/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/FrontEnd/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/FrontEnd/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/FrontEnd/lib/login_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/FrontEnd/lib/login_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/FrontEnd/lib/macro_tracking_page.dart" beforeDir="false" afterPath="$PROJECT_DIR$/FrontEnd/lib/macro_tracking_page.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/FrontEnd/lib/register_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/FrontEnd/lib/register_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/FrontEnd/lib/splash_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/FrontEnd/lib/splash_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/FrontEnd/lib/user_page.dart" beforeDir="false" afterPath="$PROJECT_DIR$/FrontEnd/lib/user_page.dart" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -19,10 +26,10 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "customColor": "",
-  "associatedIndex": 0
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 0
+}</component>
   <component name="ProjectId" id="2nvuH3gIbXoptux2JTeZLCubdvl" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
@@ -39,7 +46,7 @@
     "dart.analysis.tool.window.visible": "false",
     "git-widget-placeholder": "main",
     "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "F:/Szofver proj/FitApp/FrontEnd",
+    "last_opened_file_path": "/home/kriszti/Desktop/FitApp/FrontEnd",
     "show.migrate.to.gradle.popup": "false"
   }
 }]]></component>

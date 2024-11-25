@@ -114,6 +114,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   Future<void> _initializeApp() async {
     try {
       await _loadSavedData();
+      
     } catch (e) {
       print('Error initializing app: $e');
       // Initialize with default values if SharedPreferences fails

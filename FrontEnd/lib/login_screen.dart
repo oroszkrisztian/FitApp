@@ -32,6 +32,41 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login(BuildContext context) async {
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Center(
+          child: Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  'Logging in...',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
     final String username = _usernameController.text;
     final String password = _passwordController.text;
 
@@ -50,16 +85,14 @@ class _LoginScreenState extends State<LoginScreen> {
         },
       );
 
-      print("username: $username");
-      print("password: $password");
-      print("Response status: ${response.statusCode}");
-      print("Response body: ${response.body}");
+      // Close loading dialog
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        print('Login successful: $data');
 
-        // Save user_id to SharedPreferences
         final SharedPreferences prefs = await SharedPreferences.getInstance();
         await prefs.setInt('user_id', data['user_id']);
 
@@ -67,14 +100,15 @@ class _LoginScreenState extends State<LoginScreen> {
           _navigateToMacroTracking(context);
         }
       } else if (response.statusCode == 401) {
-        print('Login failed: Invalid credentials');
         _showErrorDialog(context, 'Invalid email or password');
       } else {
-        print('Login failed: ${response.body}');
         _showErrorDialog(context, 'Login failed: ${response.body}');
       }
     } catch (e) {
-      print('Error: $e');
+      // Close loading dialog if error occurs
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
       _showErrorDialog(context, 'Error connecting to server');
     }
   }

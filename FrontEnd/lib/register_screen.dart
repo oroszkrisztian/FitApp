@@ -65,7 +65,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
             'height': _heightController.text,
             'weight': _weightController.text,
             'age': _ageController.text,
-            'gender': _selectedGender,
+            'gender': _selectedGender.toLowerCase(),
             'username': _usernameController.text,
           },
         );

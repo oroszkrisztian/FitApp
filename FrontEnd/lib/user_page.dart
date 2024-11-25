@@ -1,5 +1,41 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:fit_app/services/user_update.dart';
+import 'package:http/http.dart' as http;
+
+class UserProfileResponse {
+  int? userId;
+  String? name;
+  String? email;
+  double? height;
+  double? weight;
+  int? age;
+  String? gender;
+
+  UserProfileResponse({
+    this.userId,
+    this.name,
+    this.email,
+    this.height,
+    this.weight,
+    this.age,
+    this.gender,
+  });
+
+  factory UserProfileResponse.fromJson(Map<String, dynamic> json) {
+    return UserProfileResponse(
+      userId: json['user_id'],
+      name: json['name'],
+      email: json['email'],
+      height: json['height'],
+      weight: json['weight'],
+      age: json['age'],
+      gender: json['gender'],
+    );
+  }
+}
 
 class UserPage extends StatefulWidget {
   const UserPage({super.key});
@@ -11,6 +47,7 @@ class UserPage extends StatefulWidget {
 class _UserPageState extends State<UserPage> {
   final _formKey = GlobalKey<FormState>();
   bool _isEditing = false;
+  bool _isLoading = true;
 
   late TextEditingController _usernameController;
   late TextEditingController _emailController;
@@ -18,16 +55,103 @@ class _UserPageState extends State<UserPage> {
   late TextEditingController _weightController;
   late TextEditingController _ageController;
   String _selectedGender = 'Male';
+  int? userId;
 
   @override
   void initState() {
     super.initState();
-    // Initialize controllers with dummy data for now
-    _usernameController = TextEditingController(text: 'testUser');
-    _emailController = TextEditingController(text: 'test@email.com');
-    _heightController = TextEditingController(text: '175');
-    _weightController = TextEditingController(text: '70');
-    _ageController = TextEditingController(text: '25');
+    _initializeControllers();
+    _loadUserData();
+  }
+
+  void _initializeControllers() {
+    _usernameController = TextEditingController();
+    _emailController = TextEditingController();
+    _heightController = TextEditingController();
+    _weightController = TextEditingController();
+    _ageController = TextEditingController();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      userId = prefs.getInt('user_id');
+
+      if (userId != null) {
+        final response = await http.get(
+          Uri.parse(
+              'https://func-fitapp-backend.azurewebsites.net/users/$userId'),
+          headers: {'Content-Type': 'application/json'},
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          print(response.body);
+
+          setState(() {
+            _usernameController.text = data['username'] ?? '';
+            _emailController.text = data['user']['email'] ??
+                ''; // Access email from nested user object
+            _heightController.text = (data['height'] ?? '').toString();
+            _weightController.text = (data['weight'] ?? '').toString();
+            _ageController.text = (data['age'] ?? '').toString();
+            _selectedGender = data['gender'] == 'male'
+                ? 'Male'
+                : data['gender'] == 'female'
+                    ? 'Female'
+                    : 'Other';
+            _isLoading = false;
+          });
+        } else {
+          throw Exception('Failed to load user data');
+        }
+      }
+    } catch (e) {
+      print('Error loading user data: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _toggleEdit() async {
+    if (_isEditing) {
+      if (_formKey.currentState!.validate()) {
+        try {
+          await UserUpdate().updateUser(
+            userId: userId!,
+            email: _emailController.text,
+            height: double.tryParse(_heightController.text),
+            weight: double.tryParse(_weightController.text),
+            age: int.tryParse(_ageController.text),
+            gender: _selectedGender.toLowerCase(),
+          );
+
+          // Reload user data after successful update
+          await _loadUserData();
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Profile updated successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          setState(() {
+            _isEditing = false;
+          });
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Update failed: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } else {
+      setState(() {
+        _isEditing = true;
+      });
+    }
   }
 
   InputDecoration _buildInputDecoration(String label, IconData icon) {
@@ -51,25 +175,6 @@ class _UserPageState extends State<UserPage> {
       fillColor: Colors.grey.shade50,
       enabled: _isEditing,
     );
-  }
-
-  void _toggleEdit() {
-    setState(() {
-      if (_isEditing) {
-        // Save changes
-        if (_formKey.currentState!.validate()) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Profile updated successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          _isEditing = false;
-        }
-      } else {
-        _isEditing = true;
-      }
-    });
   }
 
   @override
@@ -223,7 +328,11 @@ class _UserPageState extends State<UserPage> {
                     const SizedBox(width: 16),
                     Expanded(
                       child: DropdownButtonFormField<String>(
-                        value: _selectedGender,
+                        value: _selectedGender.toLowerCase() == 'male'
+                            ? 'Male'
+                            : _selectedGender.toLowerCase() == 'female'
+                                ? 'Female'
+                                : 'Other',
                         decoration: _buildInputDecoration(
                             'Gender', Icons.person_outline),
                         items: ['Male', 'Female', 'Other']
