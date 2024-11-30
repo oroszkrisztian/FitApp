@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database.database import get_db
-from models.models import User, UserProfile  # Assuming UserProfile is the model for User_profiles
+from models.models import User, UserProfile,UserRecommended  # Assuming UserProfile is the model for User_profiles
 import bcrypt
 
 router = APIRouter()
@@ -40,6 +40,26 @@ def update_user_info(
         if gender is not None:
             user_profile.gender = gender
 
-    # Commit the changes
+    user_recommended = db.query(UserRecommended).filter(UserRecommended.user_id == user_id).first()
+    if user_recommended is None:
+        user_recommended = UserRecommended(user_id=user_id)
+        db.add(user_recommended)
+
+    # Calculate and update UserRecommended values
+    if height is not None and weight is not None and age is not None and gender is not None:
+        # Calculate BMR based on gender
+        if gender.lower() == "male":
+            bmr = 10 * weight + 6.25 * height - 5 * age + 5
+        else:
+            bmr = 10 * weight + 6.25 * height - 5 * age - 161
+
+        # Calculate macronutrient recommendations
+        user_recommended.calorie = float(round(bmr))
+        user_recommended.protein = float(round(bmr * 0.2 / 6))
+        user_recommended.fat = float(round(bmr * 0.25 / 9))
+        user_recommended.carbs = float(round(bmr * 0.55 / 6))
+
+    # Commit changes to the database
     db.commit()
-    return {"message": "User information updated successfully"}
+
+    return {"message": "User information and recommendations updated successfully"}

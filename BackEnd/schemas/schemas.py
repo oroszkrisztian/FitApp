@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from decimal import Decimal
-from typing import List, Optional
-from datetime import datetime
+from typing import List, Optional   
+from datetime import date
 
 # Input schema (without food_id) for creation requests
 class FoodCreate(BaseModel):
@@ -36,7 +36,7 @@ class UserFoodBase(BaseModel):
     user_id: int
     food_id: int
     grams: Decimal
-    consumed_at: datetime
+    consumed_at: date
 
 class UserFood(UserFoodBase):
     log_id: int
@@ -59,6 +59,39 @@ class UserProfileResponse(BaseModel):
     gender: str
     username: str
     user: UserResponse
+    activity: int
+
+    class Config:
+        orm_mode = True
+
+class FoodDetails(BaseModel):
+    food_id: int
+    name: str
+    calories: float
+    protein: float
+    fat: float
+    carbs: float
+
+    class Config:
+        orm_mode = True
+
+# Schema for user food log including food details
+class UserFoodLogResponse(BaseModel):
+    log_id: int
+    user_id: int
+    grams: float
+    consumed_at: date
+    food: FoodDetails  # Nested schema for food details
+
+    class Config:
+        orm_mode = True
+
+class UserRecommendedResponse(BaseModel):
+    user_id: int
+    calorie: float
+    protein: float
+    fat: float
+    carbs: float
 
     class Config:
         orm_mode = True
