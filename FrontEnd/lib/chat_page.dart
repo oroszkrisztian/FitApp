@@ -108,7 +108,7 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chat with Gemini AI'),
+        title: const Text('Chat with Bot'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Container(

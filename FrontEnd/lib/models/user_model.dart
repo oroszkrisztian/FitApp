@@ -24,7 +24,7 @@ class UserModel {
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
       userId: json['user_id'],
-      username: json['username'] ?? 'Unknown',  // Using 'username' from the API response
+      username: json['username'] ?? 'Unknown',
       email: json['user']['email'] ?? 'Unknown',
       height: (json['height'] ?? 0).toDouble(),
       weight: (json['weight'] ?? 0).toDouble(),
