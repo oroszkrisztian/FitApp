@@ -20,36 +20,36 @@ import 'dailyPast.dart';
 
 class ThemeConstants {
   static final inputDecoration = (BuildContext context) => InputDecoration(
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-              color: Theme.of(context).colorScheme.primary, width: 2),
-        ),
-        filled: true,
-        fillColor: Colors.grey.shade50,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        labelStyle: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-        ),
-      );
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: Colors.black.withOpacity(0.3)),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: Colors.black.withOpacity(0.3)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: Colors.green, width: 2),
+    ),
+    filled: true,
+    fillColor: Colors.white,
+    contentPadding:
+    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    labelStyle: const TextStyle(
+      fontSize: 14,
+      fontWeight: FontWeight.w500,
+      color: Colors.black,
+    ),
+  );
 
   static final cardDecoration = BoxDecoration(
     color: Colors.white,
     borderRadius: BorderRadius.circular(12),
-    border: Border.all(color: Colors.grey.shade200),
+    border: Border.all(color: Colors.black.withOpacity(0.2)),
     boxShadow: [
       BoxShadow(
-        color: Colors.grey.shade200,
+        color: Colors.black.withOpacity(0.1),
         blurRadius: 4,
         offset: const Offset(0, 2),
       ),
@@ -60,6 +60,7 @@ class ThemeConstants {
     fontSize: 16,
     fontWeight: FontWeight.bold,
     letterSpacing: 0.5,
+    color: Colors.black,
   );
 }
 
@@ -100,12 +101,14 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   double mealCalories = 0;
   double mealFat = 0;
 
-  static const String KEY_LAST_SAVED_DATE = 'last_saved_date';
-  static const String KEY_DAILY_MEALS = 'meals';
-  static const String KEY_DAILY_CARBS = 'carbs';
-  static const String KEY_DAILY_PROTEIN = 'protein';
-  static const String KEY_DAILY_CALORIES = 'calories';
-  static const String KEY_DAILY_FAT = 'fat';
+  final per100gCarbsController = TextEditingController();
+  final per100gProteinController = TextEditingController();
+  final per100gCaloriesController = TextEditingController();
+  final per100gFatController = TextEditingController();
+  final searchController = TextEditingController();
+  final quantityController = TextEditingController();
+
+
 
   @override
   void initState() {
@@ -267,12 +270,12 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
 
   Future<void> _addMeal(
       String name,
-      double mealCarbs,
-      double mealProtein,
-      double mealCalories,
-      double mealFat, {
-        double grams = 0.0,
-      }) async {
+      String mealCarbs,
+      String mealProtein,
+      String mealCalories,
+      String mealFat,
+      String grams
+      ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getInt('user_id');
@@ -293,20 +296,19 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
       final uri = Uri.parse(baseUrl).replace(
         queryParameters: {
           'user_id': userId.toString(),
-          'grams': '100',
-          //user grams
+          'grams': double.tryParse(grams)?.toString(),//wha user inputs
         },
       );
-      //macros per 100g
+      //100
       final response = await http.post(
         uri,
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'name': name.toLowerCase(),
-          'carbs': mealCarbs,
-          'protein': mealProtein,
-          'calories': mealCalories,
-          'fat': mealFat,
+          'carbs': double.tryParse(mealCarbs) ?? 0.0, // Convert to double
+          'protein': double.tryParse(mealProtein) ?? 0.0, // Convert to double
+          'calories': double.tryParse(mealCalories) ?? 0.0, // Convert to double
+          'fat': double.tryParse(mealFat) ?? 0.0, // Convert to double
         }),
       );
 
@@ -369,7 +371,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
               Text(
                 'Goal: ${goalValue.toStringAsFixed(0)}${title == 'Calories' ? 'kcal' : 'g'}',
                 style: TextStyle(
-                  color: color.withOpacity(0.7),
+                  color: color.withOpacity(1),
                   fontSize: 11,
                   fontWeight: FontWeight.w500,
                 ),
@@ -433,30 +435,22 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     final actualCalories = meal.food.calories * ratio;
     final actualFat = meal.food.fat * ratio;
 
-    return Dismissible(
-      key: Key(meal.food.name + index.toString()),
-      background: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.red.shade400,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        child: const Icon(
-          Icons.delete,
-          color: Colors.white,
-        ),
-      ),
+    return Expanded(
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.grey.shade100, // Grey silver at top
+              Colors.white, // White at bottom
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
-              spreadRadius: 0,
+              color: Colors.black.withOpacity(0.1),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),
@@ -527,6 +521,16 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     );
   }
 
+  void _clearTextFields() {
+    per100gCarbsController.clear();
+    per100gProteinController.clear();
+    per100gCaloriesController.clear();
+    per100gFatController.clear();
+    searchController.clear();
+    quantityController.clear();
+  }
+
+
 
   void _showAddMealDialog() {
     // Variables for meal data
@@ -537,12 +541,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     Timer? _debounce;
 
     // Controllers
-    final per100gCarbsController = TextEditingController();
-    final per100gProteinController = TextEditingController();
-    final per100gCaloriesController = TextEditingController();
-    final per100gFatController = TextEditingController();
-    final searchController = TextEditingController();
-    final quantityController = TextEditingController();
+
 
     // Services
     final FoodService _foodService = FoodService();
@@ -929,20 +928,25 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                             ),
                           ),
                           const SizedBox(width: 16),
+
                           ElevatedButton(
                             onPressed: _isLoading
                                 ? null
                                 : () async {
                                     if (mealName.isNotEmpty &&
                                         mealQuantity > 0) {
+
                                       await _addMeal(
                                         mealName,
-                                        mealCarbs,
-                                        mealProtein,
-                                        mealCalories,
-                                        mealFat,
-                                        grams: mealQuantity,
+                                        per100gCarbsController.text,
+                                        per100gProteinController.text,
+                                        per100gCaloriesController.text,
+                                        per100gFatController.text,
+                                        quantityController.text,
                                       );
+
+                                      _clearTextFields();
+
                                       if (context.mounted) {
                                         Navigator.of(context).pop();
                                       }
@@ -1027,7 +1031,14 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
           children: [
             DrawerHeader(
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.inversePrimary,
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.grey.shade900, // Grey silver at top
+                    Colors.white, // White at bottom
+                  ],
+                ),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1141,7 +1152,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Theme.of(context).colorScheme.inversePrimary.withOpacity(0.2),
+              Theme.of(context).colorScheme.primary.withOpacity(0.4),
               Colors.white,
             ],
           ),
@@ -1161,7 +1172,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: Colors.grey[800],
+                          color: Colors.black,
                         ),
                       ),
                     ],
@@ -1171,11 +1182,18 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.grey.shade400, // Grey silver at top
+                            Colors.white, // White at bottom
+                          ],
+                        ),
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.grey.withOpacity(0.1),
+                            color: Colors.black.withOpacity(0.1),
                             blurRadius: 10,
                             offset: const Offset(0, 2),
                           ),
@@ -1205,7 +1223,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Colors.grey[800],
+                            color: Colors.black,
                           ),
                         ),
                         TextButton.icon(
@@ -1216,7 +1234,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                           label: Text(
                             'Add Meal',
                             style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
+                              color: Colors.black,
                             ),
                           ),
                           onPressed: _showAddMealDialog,

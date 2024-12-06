@@ -10,6 +10,7 @@ class UserModel {
   final double weight;
   final int age;
   final String gender;
+  final int activity;
 
   UserModel({
     required this.userId,
@@ -19,6 +20,7 @@ class UserModel {
     required this.weight,
     required this.age,
     required this.gender,
+    required this.activity
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -30,6 +32,7 @@ class UserModel {
       weight: (json['weight'] ?? 0).toDouble(),
       age: json['age'] ?? 0,
       gender: json['gender'] ?? 'Other',
+      activity: json['activity'] ?? '1',
     );
   }
 

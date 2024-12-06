@@ -64,6 +64,7 @@ class _SplashScreenState extends State<SplashScreen>
           print('Weight: ${user.weight}');
           print('Age: ${user.age}');
           print('Gender: ${user.gender}');
+          print('Activity: ${user.activity}');
 
           Navigator.pushReplacement(
             context,
