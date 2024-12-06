@@ -19,9 +19,9 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.redAccent),
         useMaterial3: true,
-        primaryColor: Colors.deepPurple,
+        primaryColor: Colors.blue,
         floatingActionButtonTheme: FloatingActionButtonThemeData(
-          backgroundColor: Colors.redAccent,
+          backgroundColor: Colors.blue,
         ),
         appBarTheme: AppBarTheme(
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,

@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'package:fit_app/chat_page.dart';
 import 'package:fit_app/login_screen.dart';
 import 'package:fit_app/services/food_services.dart';
+import 'package:fit_app/services/recommended_intake.dart';
+import 'package:fit_app/services/weekly_food_service.dart';
 import 'package:fit_app/user_page.dart';
+import 'package:fit_app/weeklyFood.dart';
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
@@ -13,6 +15,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dailyPast.dart';
+
+
 
 class ThemeConstants {
   static final inputDecoration = (BuildContext context) => InputDecoration(
@@ -71,6 +75,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   double carbs = 0;
   double protein = 0;
   double calories = 0;
+  List<FoodLog> todaysMeals = [];
   double fat = 0;
   List<Map<String, dynamic>> meals = [];
   final ImagePicker _picker = ImagePicker();
@@ -80,37 +85,57 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   bool _isInitialized = false;
   String _username = 'User';
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final WeeklyFoodService _weeklyFoodService = WeeklyFoodService();
 
   late final GenerativeModel _geminiModel;
   String nutritionData = '';
 
   final FoodService _foodService = FoodService();
 
-
+  final RecommendedIntakeService _recommendedService = RecommendedIntakeService();
+  RecommendedIntake? _recommendedIntake;
 
   double mealCarbs = 0;
   double mealProtein = 0;
   double mealCalories = 0;
   double mealFat = 0;
 
+  static const String KEY_LAST_SAVED_DATE = 'last_saved_date';
+  static const String KEY_DAILY_MEALS = 'meals';
+  static const String KEY_DAILY_CARBS = 'carbs';
+  static const String KEY_DAILY_PROTEIN = 'protein';
+  static const String KEY_DAILY_CALORIES = 'calories';
+  static const String KEY_DAILY_FAT = 'fat';
+
   @override
   void initState() {
     super.initState();
     _initializeGemini();
-    _loadSavedData();
-    _initializeApp();
     _loadUsername();
+    _loadRecommendedIntake();
+    _fetchTodaysFoods();
+  }
+
+  Future<void> _loadRecommendedIntake() async {
+    final recommended = await _recommendedService.getRecommendedIntake();
+    if (recommended != null) {
+      setState(() {
+        _recommendedIntake = recommended;
+      });
+    }
   }
 
   Future<void> _loadUsername() async {
     final prefs = await SharedPreferences.getInstance();
-    final username = prefs.getString('username');  // Fetch the username from SharedPreferences
+    final username = prefs
+        .getString('username'); // Fetch the username from SharedPreferences
     if (username != null) {
       setState(() {
-        _username = username;  // Update the state with the loaded username
+        _username = username; // Update the state with the loaded username
       });
     }
   }
+
   void _initializeGemini() {
     _geminiModel = GenerativeModel(
       model: 'gemini-pro',
@@ -118,104 +143,58 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     );
   }
 
-  Future<void> _initializeApp() async {
+
+
+  Future<void> _fetchTodaysFoods() async {
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
-      await _loadSavedData();
-      
-    } catch (e) {
-      print('Error initializing app: $e');
-      // Initialize with default values if SharedPreferences fails
-      _preferences = null;
-      setState(() {
-        meals = [];
-        carbs = 0;
-        protein = 0;
-        calories = 0;
-        fat = 0;
-      });
-    } finally {
-      setState(() {
-        _isInitialized = true;
-      });
-    }
-  }
+      final today = DateTime.now();
+      final foodsByDate = await _weeklyFoodService.fetchWeeklyFoodLogs(
+        today,
+        today,
+      );
 
-  Future<void> _loadSavedData() async {
-    try {
-      _preferences = await SharedPreferences.getInstance();
-
-      final savedDateStr = _preferences?.getString('last_saved_date');
-      if (savedDateStr != null) {
-        _lastSavedDate = DateTime.parse(savedDateStr);
-
-        // Check if it's a new day
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        final savedDate = DateTime(
-            _lastSavedDate.year, _lastSavedDate.month, _lastSavedDate.day);
-
-        if (today.isAfter(savedDate)) {
-          print('New day detected, resetting data');
-          await _resetData();
-          return;
-        }
-      }
-
-      final savedMealsJson = _preferences?.getString('meals');
-      if (savedMealsJson != null) {
-        final savedMeals = List<Map<String, dynamic>>.from(json
-            .decode(savedMealsJson)
-            .map((x) => Map<String, dynamic>.from(x)));
-
+      if (foodsByDate.containsKey(today.toIso8601String().split('T')[0])) {
+        final foods = foodsByDate[today.toIso8601String().split('T')[0]]!;
+        _updateTotals(foods);
         setState(() {
-          meals = savedMeals;
-          carbs = _preferences?.getDouble('carbs') ?? 0;
-          protein = _preferences?.getDouble('protein') ?? 0;
-          calories = _preferences?.getDouble('calories') ?? 0;
-          fat = _preferences?.getDouble('fat') ?? 0;
+          todaysMeals = foods;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          todaysMeals = [];
+          _resetTotals();
+          _isLoading = false;
         });
       }
     } catch (e) {
-      print('Error loading saved data: $e');
-      rethrow;
+      print('Error fetching today\'s foods: $e');
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  Future<void> _saveData() async {
-    if (_preferences == null) return;
+  void _resetTotals() {
+    carbs = 0;
+    protein = 0;
+    calories = 0;
+    fat = 0;
+  }
 
-    try {
-      final now = DateTime.now();
-      await _preferences?.setString('last_saved_date', now.toIso8601String());
-      await _preferences?.setString('meals', json.encode(meals));
-      await _preferences?.setDouble('carbs', carbs);
-      await _preferences?.setDouble('protein', protein);
-      await _preferences?.setDouble('calories', calories);
-      await _preferences?.setDouble('fat', fat);
-
-      _lastSavedDate = now; // Update the in-memory date after successful save
-    } catch (e) {
-      print('Error saving data: $e');
+  void _updateTotals(List<FoodLog> foods) {
+    _resetTotals();
+    for (var food in foods) {
+      final ratio = food.grams / 100;
+      carbs += food.food.carbs * ratio;
+      protein += food.food.protein * ratio;
+      calories += food.food.calories * ratio;
+      fat += food.food.fat * ratio;
     }
-  }
-
-  Future<void> _resetData() async {
-    print('Resetting data at ${DateTime.now()}');
-    setState(() {
-      meals = [];
-      carbs = 0;
-      protein = 0;
-      calories = 0;
-      fat = 0;
-      _lastSavedDate = DateTime.now(); // Update the last saved date
-    });
-    await _saveData();
-  }
-
-  bool _isSameDay(DateTime date1, DateTime date2) {
-    return date1.year == date2.year &&
-        date1.month == date2.month &&
-        date1.day == date2.day;
   }
 
   Future<Map<String, double>> _extractNutritionWithGemini(String text) async {
@@ -287,16 +266,14 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   }
 
   Future<void> _addMeal(
-    String name,
-    double mealCarbs,
-    double mealProtein,
-    double mealCalories,
-    double mealFat,
-  ) async {
-    if (!_isInitialized) return;
-
+      String name,
+      double mealCarbs,
+      double mealProtein,
+      double mealCalories,
+      double mealFat, {
+        double grams = 0.0,
+      }) async {
     try {
-      // Get user_id from SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getInt('user_id');
 
@@ -306,27 +283,24 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
           Navigator.pushAndRemoveUntil(
             context,
             MaterialPageRoute(builder: (context) => const LoginScreen()),
-            (route) => false,
+                (route) => false,
           );
         }
         return;
       }
 
-      // Prepare the request with query parameters
       final baseUrl = 'https://func-fitapp-backend.azurewebsites.net/foods/';
       final uri = Uri.parse(baseUrl).replace(
         queryParameters: {
           'user_id': userId.toString(),
-          'grams': '100.0', // Since we're storing per 100g values
+          'grams': '100',
+          //user grams
         },
       );
-
-      // Body only contains food data
+      //macros per 100g
       final response = await http.post(
         uri,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'name': name.toLowerCase(),
           'carbs': mealCarbs,
@@ -336,102 +310,38 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
         }),
       );
 
-      print('Request URL: ${uri.toString()}');
-      print('Request Body: ${json.encode({
-            'name': name.toLowerCase(),
-            'carbs': mealCarbs,
-            'protein': mealProtein,
-            'calories': mealCalories,
-            'fat': mealFat,
-          })}');
-      print('Response Status: ${response.statusCode}');
-      print('Response Body: ${response.body}');
-
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // Update local state
-        setState(() {
-          meals.add({
-            'name': name,
-            'carbs': mealCarbs,
-            'protein': mealProtein,
-            'calories': mealCalories,
-            'fat': mealFat,
-          });
-
-          carbs += mealCarbs;
-          protein += mealProtein;
-          calories += mealCalories;
-          fat += mealFat;
-
-          _isLoading = false;
-        });
-
-        // Save to local storage
-        await _saveData();
-
-        print('Meal added successfully to server and local storage');
+        await _fetchTodaysFoods(); // Refresh the foods list from backend
       } else {
-        print('Failed to add meal to server: ${response.body}');
         throw Exception('Failed to add meal to server');
       }
     } catch (e) {
       print('Error adding meal: $e');
       if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Error'),
-            content: Text('Failed to add meal: $e'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add meal: $e')),
         );
       }
-
-      // Still save locally even if server fails
-      setState(() {
-        meals.add({
-          'name': name,
-          'carbs': mealCarbs,
-          'protein': mealProtein,
-          'calories': mealCalories,
-          'fat': mealFat,
-        });
-
-        carbs += mealCarbs;
-        protein += mealProtein;
-        calories += mealCalories;
-        fat += mealFat;
-
-        _isLoading = false;
-      });
-      await _saveData();
     }
   }
 
-  Future<void> _deleteMeal(int index) async {
-    if (!_isInitialized) {
-      return;
+
+  Widget _buildMacroCard(String title, double value, double percentage, Color color) {
+    double getGoalValue(String title) {
+      if (title == 'Carbs') {
+        return _recommendedIntake?.carbs ?? 0;
+      } else if (title == 'Protein') {
+        return _recommendedIntake?.protein ?? 0;
+      } else if (title == 'Calories') {
+        return _recommendedIntake?.calorie ?? 0;
+      } else if (title == 'Fat') {
+        return _recommendedIntake?.fat ?? 0;
+      }
+      return 0;
     }
 
-    setState(() {
-      final meal = meals[index];
-      carbs -= meal['carbs'];
-      protein -= meal['protein'];
-      calories -= meal['calories'];
-      fat -= meal['fat'];
-      meals.removeAt(index);
-    });
+    final double goalValue = getGoalValue(title);
 
-    await _saveData();
-  }
-
-  Widget _buildMacroCard(
-      String title, double value, double percentage, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -443,15 +353,28 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: color.withOpacity(0.8),
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: color.withOpacity(0.8),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                'Goal: ${goalValue.toStringAsFixed(0)}${title == 'Calories' ? 'kcal' : 'g'}',
+                style: TextStyle(
+                  color: color.withOpacity(0.7),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
           const Spacer(),
           FittedBox(
@@ -477,9 +400,21 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
               ],
             ),
           ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: LinearProgressIndicator(
+              value: goalValue > 0 ? (value / goalValue).clamp(0.0, 1.0) : 0,
+              backgroundColor: color.withOpacity(0.1),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+              minHeight: 3,
+            ),
+          ),
           const SizedBox(height: 2),
           Text(
-            '${percentage.toStringAsFixed(1)}%',
+            goalValue > 0
+                ? '${((value / goalValue) * 100).toStringAsFixed(0)}%'
+                : '0%',
             style: TextStyle(
               color: color.withOpacity(0.7),
               fontSize: 12,
@@ -490,9 +425,16 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     );
   }
 
-  Widget _buildMealCard(Map<String, dynamic> meal, int index) {
+  Widget _buildMealCard(FoodLog meal, int index) {
+    // Calculate nutrition values based on the grams consumed
+    final ratio = meal.grams / 100;
+    final actualCarbs = meal.food.carbs * ratio;
+    final actualProtein = meal.food.protein * ratio;
+    final actualCalories = meal.food.calories * ratio;
+    final actualFat = meal.food.fat * ratio;
+
     return Dismissible(
-      key: Key(meal['name'] + index.toString()),
+      key: Key(meal.food.name + index.toString()),
       background: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
@@ -506,10 +448,6 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
           color: Colors.white,
         ),
       ),
-      direction: DismissDirection.endToStart,
-      onDismissed: (direction) {
-        _deleteMeal(index);
-      },
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
@@ -533,37 +471,18 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    meal['name'],
+                    meal.food.name,
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  PopupMenuButton(
-                    icon: Icon(
-                      Icons.more_vert,
+                  Text(
+                    '${meal.grams}g',
+                    style: TextStyle(
+                      fontSize: 16,
                       color: Colors.grey[600],
                     ),
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.delete, color: Colors.red),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Delete',
-                              style: TextStyle(color: Colors.red[700]),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    onSelected: (value) {
-                      if (value == 'delete') {
-                        _deleteMeal(index);
-                      }
-                    },
                   ),
                 ],
               ),
@@ -571,11 +490,10 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildMealNutrient('Carbs', meal['carbs'], Colors.blue),
-                  _buildMealNutrient('Protein', meal['protein'], Colors.red),
-                  _buildMealNutrient(
-                      'Calories', meal['calories'], Colors.orange),
-                  _buildMealNutrient('Fat', meal['fat'], Colors.green),
+                  _buildMealNutrient('Carbs', actualCarbs, Colors.blue),
+                  _buildMealNutrient('Protein', actualProtein, Colors.red),
+                  _buildMealNutrient('Calories', actualCalories, Colors.orange),
+                  _buildMealNutrient('Fat', actualFat, Colors.green),
                 ],
               ),
             ],
@@ -609,26 +527,33 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     );
   }
 
+
   void _showAddMealDialog() {
+    // Variables for meal data
     String mealName = '';
     double mealQuantity = 0;
     bool showNutritionFields = false;
     List<FoodDetails> searchResults = [];
     Timer? _debounce;
 
+    // Controllers
     final per100gCarbsController = TextEditingController();
     final per100gProteinController = TextEditingController();
     final per100gCaloriesController = TextEditingController();
     final per100gFatController = TextEditingController();
     final searchController = TextEditingController();
     final quantityController = TextEditingController();
+
+    // Services
     final FoodService _foodService = FoodService();
 
+    // Nutrition values
     double per100gCarbs = 0;
     double per100gProtein = 0;
     double per100gCalories = 0;
     double per100gFat = 0;
 
+    // Helper function to calculate nutrition based on quantity
     void calculateNutritionForQuantity() {
       if (mealQuantity > 0) {
         double ratio = mealQuantity / 100;
@@ -639,6 +564,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
       }
     }
 
+    // Helper function to update nutrition values from search results
     void updateNutritionValues(FoodDetails food) {
       per100gCarbs = food.carbs;
       per100gProtein = food.protein;
@@ -652,7 +578,13 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
 
       mealName = food.name;
       searchController.text = food.name;
+
+      // Calculate values if quantity is already entered
+      if (mealQuantity > 0) {
+        calculateNutritionForQuantity();
+      }
     }
+
 
     showDialog(
       context: context,
@@ -693,19 +625,22 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                       ),
                       const SizedBox(height: 24),
 
-                      // Search Field
+                      // Search Field with Auto-complete
                       TextFormField(
                         controller: searchController,
-                        decoration: ThemeConstants.inputDecoration(context).copyWith(
-                          labelText: 'Search Food',
-                          hintText: 'Type to search foods...',
-                          prefixIcon: const Icon(Icons.search),
+                        decoration:
+                            ThemeConstants.inputDecoration(context).copyWith(
+                          labelText: 'Food Name',
+                          hintText: 'Type to search or add new food',
+                          prefixIcon: const Icon(Icons.restaurant_menu),
                         ),
                         onChanged: (value) {
                           mealName = value;
                           if (_debounce?.isActive ?? false) _debounce!.cancel();
-                          _debounce = Timer(const Duration(milliseconds: 500), () async {
-                            final results = await _foodService.searchFoods(value);
+                          _debounce = Timer(const Duration(milliseconds: 500),
+                              () async {
+                            final results =
+                                await _foodService.searchFoods(value);
                             setDialogState(() {
                               searchResults = results;
                             });
@@ -738,6 +673,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                                     updateNutritionValues(food);
                                     showNutritionFields = true;
                                     searchResults = [];
+                                    calculateNutritionForQuantity();
                                   });
                                 },
                               );
@@ -748,10 +684,11 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                       ],
 
                       // Quantity Field
-                      TextFormField(
+                      TextField(
                         controller: quantityController,
-                        decoration: ThemeConstants.inputDecoration(context).copyWith(
-                          labelText: 'Quantity (grams)',
+                        decoration:
+                            ThemeConstants.inputDecoration(context).copyWith(
+                          labelText: 'Quantity',
                           hintText: 'Enter quantity in grams',
                           prefixIcon: const Icon(Icons.scale),
                         ),
@@ -763,135 +700,216 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                         },
                       ),
                       const SizedBox(height: 24),
-
-                      if (showNutritionFields) ...[
-                        // Nutrition Fields Section
+                      // Camera Scanning Section
+                      if (!showNutritionFields) ...[
                         Container(
-                          padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withOpacity(0.2),
                             ),
                           ),
+                          padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Nutrition Values per 100g',
+                                'Scan Nutrition Label',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                   color: Theme.of(context).colorScheme.primary,
                                 ),
                               ),
-                              const SizedBox(height: 16),
-
-                              // Nutrition Input Fields
-                              TextFormField(
-                                controller: per100gCarbsController,
-                                decoration: ThemeConstants.inputDecoration(context).copyWith(
-                                  labelText: 'Carbs per 100g',
-                                  prefixIcon: const Icon(Icons.grain),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Use your camera to scan the nutrition label from your food package',
+                                style: TextStyle(
+                                  color: Colors.grey[700],
+                                  fontSize: 14,
                                 ),
-                                keyboardType: TextInputType.number,
-                                onChanged: (value) {
-                                  per100gCarbs = double.tryParse(value) ?? 0;
-                                  calculateNutritionForQuantity();
-                                  setDialogState(() {});
-                                },
                               ),
                               const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: () async {
+                                  final XFile? image = await _picker.pickImage(
+                                    source: ImageSource.camera,
+                                  );
+                                  if (image != null) {
+                                    final inputImage =
+                                        InputImage.fromFilePath(image.path);
+                                    final RecognizedText recognizedText =
+                                        await _textRecognizer
+                                            .processImage(inputImage);
 
-                              TextFormField(
-                                controller: per100gProteinController,
-                                decoration: ThemeConstants.inputDecoration(context).copyWith(
-                                  labelText: 'Protein per 100g',
-                                  prefixIcon: const Icon(Icons.egg),
-                                ),
-                                keyboardType: TextInputType.number,
-                                onChanged: (value) {
-                                  per100gProtein = double.tryParse(value) ?? 0;
-                                  calculateNutritionForQuantity();
-                                  setDialogState(() {});
-                                },
-                              ),
-                              const SizedBox(height: 16),
+                                    final nutritionInfo =
+                                        await _extractNutritionWithGemini(
+                                            recognizedText.text);
 
-                              TextFormField(
-                                controller: per100gCaloriesController,
-                                decoration: ThemeConstants.inputDecoration(context).copyWith(
-                                  labelText: 'Calories per 100g',
-                                  prefixIcon: const Icon(Icons.local_fire_department),
-                                ),
-                                keyboardType: TextInputType.number,
-                                onChanged: (value) {
-                                  per100gCalories = double.tryParse(value) ?? 0;
-                                  calculateNutritionForQuantity();
-                                  setDialogState(() {});
-                                },
-                              ),
-                              const SizedBox(height: 16),
+                                    setDialogState(() {
+                                      per100gCarbs =
+                                          nutritionInfo['carbs'] ?? 0;
+                                      per100gProtein =
+                                          nutritionInfo['protein'] ?? 0;
+                                      per100gCalories =
+                                          nutritionInfo['calories'] ?? 0;
+                                      per100gFat = nutritionInfo['fat'] ?? 0;
 
-                              TextFormField(
-                                controller: per100gFatController,
-                                decoration: ThemeConstants.inputDecoration(context).copyWith(
-                                  labelText: 'Fat per 100g',
-                                  prefixIcon: const Icon(Icons.opacity),
-                                ),
-                                keyboardType: TextInputType.number,
-                                onChanged: (value) {
-                                  per100gFat = double.tryParse(value) ?? 0;
-                                  calculateNutritionForQuantity();
-                                  setDialogState(() {});
+                                      per100gCarbsController.text =
+                                          per100gCarbs.toString();
+                                      per100gProteinController.text =
+                                          per100gProtein.toString();
+                                      per100gCaloriesController.text =
+                                          per100gCalories.toString();
+                                      per100gFatController.text =
+                                          per100gFat.toString();
+
+                                      showNutritionFields = true;
+                                      calculateNutritionForQuantity();
+                                    });
+                                  }
                                 },
+                                icon: const Icon(Icons.camera_alt),
+                                label: const Text('Scan Nutrition Label'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor:
+                                      Theme.of(context).colorScheme.primary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
                         ),
                         const SizedBox(height: 24),
-
-                        // Calculated Values Display
-                        if (mealQuantity > 0) ...[
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: ThemeConstants.cardDecoration,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Calculated values for ${mealQuantity}g:',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Carbs: ${mealCarbs.toStringAsFixed(1)}g',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                                Text(
-                                  'Protein: ${mealProtein.toStringAsFixed(1)}g',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                                Text(
-                                  'Calories: ${mealCalories.toStringAsFixed(1)} kcal',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                                Text(
-                                  'Fat: ${mealFat.toStringAsFixed(1)}g',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                              ],
-                            ),
+                        const Text(
+                          'Or enter values manually:',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
                           ),
-                          const SizedBox(height: 24),
-                        ],
+                        ),
+                      ],
+
+                      // Nutrition Fields
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: per100gCarbsController,
+                          decoration:
+                              ThemeConstants.inputDecoration(context).copyWith(
+                            labelText: 'Carbs per 100g',
+                            prefixIcon: const Icon(Icons.grain),
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            per100gCarbs = double.tryParse(value) ?? 0;
+                            calculateNutritionForQuantity();
+                            setDialogState(() {});
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: per100gProteinController,
+                          decoration:
+                              ThemeConstants.inputDecoration(context).copyWith(
+                            labelText: 'Protein per 100g',
+                            prefixIcon: const Icon(Icons.egg),
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            per100gProtein = double.tryParse(value) ?? 0;
+                            calculateNutritionForQuantity();
+                            setDialogState(() {});
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: per100gCaloriesController,
+                          decoration:
+                              ThemeConstants.inputDecoration(context).copyWith(
+                            labelText: 'Calories per 100g',
+                            prefixIcon: const Icon(Icons.local_fire_department),
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            per100gCalories = double.tryParse(value) ?? 0;
+                            calculateNutritionForQuantity();
+                            setDialogState(() {});
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: per100gFatController,
+                          decoration:
+                              ThemeConstants.inputDecoration(context).copyWith(
+                            labelText: 'Fat per 100g',
+                            prefixIcon: const Icon(Icons.opacity),
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            per100gFat = double.tryParse(value) ?? 0;
+                            calculateNutritionForQuantity();
+                            setDialogState(() {});
+                          },
+                        ),
+
+                      // Calculated Values Display
+                      if (mealQuantity > 0 &&
+                          (per100gCarbs > 0 ||
+                              per100gProtein > 0 ||
+                              per100gCalories > 0 ||
+                              per100gFat > 0)) ...[
+                        const SizedBox(height: 24),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: ThemeConstants.cardDecoration,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Calculated values for ${mealQuantity}g:',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Carbs: ${mealCarbs.toStringAsFixed(1)}g',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              Text(
+                                'Protein: ${mealProtein.toStringAsFixed(1)}g',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              Text(
+                                'Calories: ${mealCalories.toStringAsFixed(1)} kcal',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              Text(
+                                'Fat: ${mealFat.toStringAsFixed(1)}g',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
 
                       // Action Buttons
+                      const SizedBox(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
@@ -915,21 +933,24 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                             onPressed: _isLoading
                                 ? null
                                 : () async {
-                              if (mealName.isNotEmpty && mealQuantity > 0) {
-                                await _addMeal(
-                                  mealName,
-                                  mealCarbs,
-                                  mealProtein,
-                                  mealCalories,
-                                  mealFat,
-                                );
-                                if (context.mounted) {
-                                  Navigator.of(context).pop();
-                                }
-                              }
-                            },
+                                    if (mealName.isNotEmpty &&
+                                        mealQuantity > 0) {
+                                      await _addMeal(
+                                        mealName,
+                                        mealCarbs,
+                                        mealProtein,
+                                        mealCalories,
+                                        mealFat,
+                                        grams: mealQuantity,
+                                      );
+                                      if (context.mounted) {
+                                        Navigator.of(context).pop();
+                                      }
+                                    }
+                                  },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Theme.of(context).colorScheme.primary,
+                              backgroundColor:
+                                  Theme.of(context).colorScheme.primary,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 24,
@@ -941,20 +962,21 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                             ),
                             child: _isLoading
                                 ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          Colors.white),
+                                    ),
+                                  )
                                 : const Text(
-                              'Add Meal',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                                    'Add Meal',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                           ),
                         ],
                       ),
@@ -967,13 +989,24 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
         );
       },
     );
+
+    // Cleanup
+    addPostFrameCallback((_) {
+      _debounce?.cancel();
+    });
+  }
+
+// Helper method for cleanup
+  void addPostFrameCallback(void Function(Duration) callback) {
+    WidgetsBinding.instance.addPostFrameCallback(callback);
   }
 
   double get totalMacros => carbs + protein + fat;
 
   @override
+  @override
   Widget build(BuildContext context) {
-    if (!_isInitialized) {
+    if (_isLoading) {
       return const Scaffold(
         body: Center(
           child: CircularProgressIndicator(),
@@ -981,21 +1014,12 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
       );
     }
 
-    final now = DateTime.now();
-    if (!_isSameDay(_lastSavedDate, now)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _resetData();
-      });
-    }
-
-    double carbsPercentage = totalMacros > 0 ? (carbs / totalMacros) * 100 : 0;
-    double proteinPercentage =
-        totalMacros > 0 ? (protein / totalMacros) * 100 : 0;
-    double fatPercentage = totalMacros > 0 ? (fat / totalMacros) * 100 : 0;
+    double carbsPercentage = protein + carbs + fat > 0 ? (carbs / (protein + carbs + fat)) * 100 : 0;
+    double proteinPercentage = protein + carbs + fat > 0 ? (protein / (protein + carbs + fat)) * 100 : 0;
+    double fatPercentage = protein + carbs + fat > 0 ? (fat / (protein + carbs + fat)) * 100 : 0;
 
     return Scaffold(
-      key:
-          _scaffoldKey, // Optional: You can use this if you prefer using GlobalKey approach
+      key: _scaffoldKey,
       backgroundColor: Colors.grey[50],
       drawer: Drawer(
         child: ListView(
@@ -1043,7 +1067,7 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) =>  DailyPastPage()),
+                  MaterialPageRoute(builder: (context) => DailyPastPage()),
                 );
               },
             ),
@@ -1052,6 +1076,10 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
               title: const Text('Analytics'),
               onTap: () {
                 Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => WeeklyFoodLogs()),
+                );
               },
             ),
             const Divider(),
@@ -1077,9 +1105,8 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                 if (mounted) {
                   Navigator.pushAndRemoveUntil(
                     context,
-                    MaterialPageRoute(
-                        builder: (context) => const LoginScreen()),
-                    (route) => false,
+                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                        (route) => false,
                   );
                 }
               },
@@ -1137,11 +1164,10 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                           color: Colors.grey[800],
                         ),
                       ),
-
                     ],
                   ),
                   const SizedBox(height: 20),
-                  if (meals.isNotEmpty) ...[
+                  if (todaysMeals.isNotEmpty) ...[
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
@@ -1163,14 +1189,10 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                         crossAxisSpacing: 12,
                         childAspectRatio: 1.6,
                         children: [
-                          _buildMacroCard(
-                              'Carbs', carbs, carbsPercentage, Colors.blue),
-                          _buildMacroCard('Protein', protein, proteinPercentage,
-                              Colors.red),
-                          _buildMacroCard(
-                              'Calories', calories, 0, Colors.orange),
-                          _buildMacroCard(
-                              'Fat', fat, fatPercentage, Colors.green),
+                          _buildMacroCard('Carbs', carbs, carbsPercentage, Colors.blue),
+                          _buildMacroCard('Protein', protein, proteinPercentage, Colors.red),
+                          _buildMacroCard('Calories', calories, 0, Colors.orange),
+                          _buildMacroCard('Fat', fat, fatPercentage, Colors.green),
                         ],
                       ),
                     ),
@@ -1236,13 +1258,12 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                 ],
               ),
             ),
-            if (meals.isNotEmpty)
+            if (todaysMeals.isNotEmpty)
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.all(24),
-                  itemCount: meals.length,
-                  itemBuilder: (context, index) =>
-                      _buildMealCard(meals[index], index),
+                  itemCount: todaysMeals.length,
+                  itemBuilder: (context, index) => _buildMealCard(todaysMeals[index], index),
                 ),
               ),
           ],
