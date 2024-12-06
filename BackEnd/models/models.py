@@ -33,7 +33,7 @@ class Food(Base):
 
     food_id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
-    calories = Column(DECIMAL(5, 2))
+    calories = Column(DECIMAL(7, 2))
     protein = Column(DECIMAL(5, 2))
     fat = Column(DECIMAL(5, 2))
     carbs = Column(DECIMAL(5, 2))
