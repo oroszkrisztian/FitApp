@@ -12,6 +12,6 @@ router = APIRouter()
 def read_foods(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     try:
         foods = db.query(FoodModel).order_by(FoodModel.food_id).offset(skip).limit(limit).all()  # Use FoodModel for querying
-        return foods  # This will be automatically converted to FoodSchema by FastAPI
+        return foods
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")

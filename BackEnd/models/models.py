@@ -38,7 +38,7 @@ class Food(Base):
     fat = Column(DECIMAL(5, 2))
     carbs = Column(DECIMAL(5, 2))
 
-    user_foods = relationship("UserFoodLog", back_populates="food") 
+    user_foods = relationship("UserFoodLog", back_populates="food")     
 
 class UserFoodLog(Base):
     __tablename__ = "User_food_logs"
@@ -63,3 +63,5 @@ class UserRecommended(Base):
     carbs = Column(Float, nullable=False)
 
     user = relationship("User", back_populates="recommended")
+
+
