@@ -268,6 +268,36 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     return match != null ? double.tryParse(match.group(0) ?? '0') ?? 0 : 0;
   }
 
+
+  void _showLoadingDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.white,
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  'Adding meal...',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey[800],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _addMeal(
       String name,
       String mealCarbs,
@@ -933,28 +963,57 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                             onPressed: _isLoading
                                 ? null
                                 : () async {
-                                    if (mealName.isNotEmpty &&
-                                        mealQuantity > 0) {
+                              if (mealName.isNotEmpty && mealQuantity > 0) {
+                                // Show loading dialog
+                                _showLoadingDialog(context);
 
-                                      await _addMeal(
-                                        mealName,
-                                        per100gCarbsController.text,
-                                        per100gProteinController.text,
-                                        per100gCaloriesController.text,
-                                        per100gFatController.text,
-                                        quantityController.text,
-                                      );
+                                try {
+                                  await _addMeal(
+                                    mealName,
+                                    per100gCarbsController.text,
+                                    per100gProteinController.text,
+                                    per100gCaloriesController.text,
+                                    per100gFatController.text,
+                                    quantityController.text,
+                                  );
 
-                                      _clearTextFields();
+                                  _clearTextFields();
 
-                                      if (context.mounted) {
-                                        Navigator.of(context).pop();
-                                      }
-                                    }
-                                  },
+                                  // Close loading dialog
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop(); // Close loading dialog
+                                    Navigator.of(context).pop(); // Close add meal dialog
+                                  }
+
+                                  // Show success message
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Meal added successfully'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  // Close loading dialog
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop(); // Close loading dialog
+                                  }
+
+                                  // Show error message
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Failed to add meal: $e'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              }
+                            },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  Theme.of(context).colorScheme.primary,
+                              backgroundColor: Theme.of(context).colorScheme.primary,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 24,
@@ -964,23 +1023,13 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                          Colors.white),
-                                    ),
-                                  )
-                                : const Text(
-                                    'Add Meal',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                            child: const Text(
+                              'Add Meal',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -1281,7 +1330,10 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                 child: ListView.builder(
                   padding: const EdgeInsets.all(24),
                   itemCount: todaysMeals.length,
-                  itemBuilder: (context, index) => _buildMealCard(todaysMeals[index], index),
+                  itemBuilder: (context, index) => _buildMealCard(
+                    todaysMeals[todaysMeals.length - 1 - index],
+                    index,
+                  ),
                 ),
               ),
           ],

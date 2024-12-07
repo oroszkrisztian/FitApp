@@ -12,6 +12,7 @@ class UserUpdate {
     double? weight,
     int? age,
     String? gender,
+    int? activityLevel,
   }) async {
     try {
       final baseUrl = 'https://func-fitapp-backend.azurewebsites.net/update/$userId';
@@ -24,6 +25,7 @@ class UserUpdate {
       if (weight != null) queryParameters['weight'] = weight.toString();
       if (age != null) queryParameters['age'] = age.toString();
       if (gender != null) queryParameters['gender'] = gender;
+      if (activityLevel != null) queryParameters['activity'] = activityLevel.toString();
 
       final uri = Uri.parse(baseUrl).replace(queryParameters: queryParameters);
 
