@@ -1,8 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:foodex/services/user_update.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:fit_app/services/user_update.dart';
+
 import 'package:http/http.dart' as http;
 
 

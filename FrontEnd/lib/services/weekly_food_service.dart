@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:fit_app/services/food_services.dart';
+
+import 'food_services.dart';
+
 
 class FoodLog {
   final FoodDetails food;

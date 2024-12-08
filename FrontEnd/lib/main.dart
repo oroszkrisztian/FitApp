@@ -1,6 +1,7 @@
-import 'package:fit_app/login_screen.dart';
-import 'package:fit_app/splash_screen.dart';
+
 import 'package:flutter/material.dart';
+import 'package:foodex/splash_screen.dart';
+import 'login_screen.dart';
 import 'macro_tracking_page.dart';
 
 void main() async {

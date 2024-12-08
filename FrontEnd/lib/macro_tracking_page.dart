@@ -1,20 +1,21 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:fit_app/chat_page.dart';
-import 'package:fit_app/login_screen.dart';
-import 'package:fit_app/services/food_services.dart';
-import 'package:fit_app/services/recommended_intake.dart';
-import 'package:fit_app/services/weekly_food_service.dart';
-import 'package:fit_app/user_page.dart';
-import 'package:fit_app/weeklyFood.dart';
+
 import 'package:flutter/material.dart';
+import 'package:foodex/services/food_services.dart';
+import 'package:foodex/services/recommended_intake.dart';
+import 'package:foodex/services/weekly_food_service.dart';
+import 'package:foodex/user_page.dart';
+import 'package:foodex/weeklyFood.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+
 import 'package:image_picker/image_picker.dart';
-import 'package:google_ml_kit/google_ml_kit.dart';
+
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dailyPast.dart';
+import 'login_screen.dart';
 
 
 
@@ -72,35 +73,36 @@ class MacroTrackingPage extends StatefulWidget {
 }
 
 class _MacroTrackingPageState extends State<MacroTrackingPage> {
+  // Services
+  final ImagePicker _picker = ImagePicker();
+  final WeeklyFoodService _weeklyFoodService = WeeklyFoodService();
+  final RecommendedIntakeService _recommendedService = RecommendedIntakeService();
+  late final GenerativeModel _geminiModel;
+
+  // Loading and state variables
   bool _isLoading = false;
+  bool _isProcessingImage = false;
+  String _username = 'User';
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  RecommendedIntake? _recommendedIntake;
+
+  // Nutrition totals
   double carbs = 0;
   double protein = 0;
   double calories = 0;
-  List<FoodLog> todaysMeals = [];
   double fat = 0;
-  List<Map<String, dynamic>> meals = [];
-  final ImagePicker _picker = ImagePicker();
-  final TextRecognizer _textRecognizer = GoogleMlKit.vision.textRecognizer();
-  SharedPreferences? _preferences;
-  DateTime _lastSavedDate = DateTime.now();
-  bool _isInitialized = false;
-  String _username = 'User';
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final WeeklyFoodService _weeklyFoodService = WeeklyFoodService();
 
-  late final GenerativeModel _geminiModel;
-  String nutritionData = '';
-
-  final FoodService _foodService = FoodService();
-
-  final RecommendedIntakeService _recommendedService = RecommendedIntakeService();
-  RecommendedIntake? _recommendedIntake;
-
+  // Current meal values
   double mealCarbs = 0;
   double mealProtein = 0;
   double mealCalories = 0;
   double mealFat = 0;
 
+  // Data storage
+  List<FoodLog> todaysMeals = [];
+  List<Map<String, dynamic>> meals = [];
+
+  // Controllers
   final per100gCarbsController = TextEditingController();
   final per100gProteinController = TextEditingController();
   final per100gCaloriesController = TextEditingController();
@@ -108,15 +110,36 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
   final searchController = TextEditingController();
   final quantityController = TextEditingController();
 
-
-
   @override
   void initState() {
     super.initState();
-    _initializeGemini();
     _loadUsername();
     _loadRecommendedIntake();
     _fetchTodaysFoods();
+  }
+
+
+  @override
+  void dispose() {
+    // Dispose controllers
+    per100gCarbsController.dispose();
+    per100gProteinController.dispose();
+    per100gCaloriesController.dispose();
+    per100gFatController.dispose();
+    searchController.dispose();
+    quantityController.dispose();
+    super.dispose();
+  }
+
+  // Initial data loading methods
+  Future<void> _loadUsername() async {
+    final prefs = await SharedPreferences.getInstance();
+    final username = prefs.getString('username');
+    if (username != null) {
+      setState(() {
+        _username = username;
+      });
+    }
   }
 
   Future<void> _loadRecommendedIntake() async {
@@ -128,40 +151,670 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     }
   }
 
-  Future<void> _loadUsername() async {
-    final prefs = await SharedPreferences.getInstance();
-    final username = prefs
-        .getString('username'); // Fetch the username from SharedPreferences
-    if (username != null) {
-      setState(() {
-        _username = username; // Update the state with the loaded username
-      });
+  void _clearTextFields() {
+    per100gCarbsController.clear();
+    per100gProteinController.clear();
+    per100gCaloriesController.clear();
+    per100gFatController.clear();
+    searchController.clear();
+    quantityController.clear();
+  }
+
+
+  // AI Processing Methods
+
+  Future<void> _processImageWithAI(BuildContext dialogContext) async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 100,
+      );
+
+      if (image != null) {
+        // Show loading dialog
+        if (dialogContext.mounted) {
+          showDialog(
+            context: dialogContext,
+            barrierDismissible: false,
+            builder: (context) => const Center(
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('Processing nutrition label...'),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        final bytes = await image.readAsBytes();
+        final base64Image = base64Encode(bytes);
+
+        final apiKey = 'AIzaSyDI7Bjn6HTZllGHPEtxdmLas9HNlNLnOco';
+        final url = Uri.parse('https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=$apiKey');
+
+        final response = await http.post(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            "contents": [{
+              "parts": [
+                {
+                  "text": "Extract nutritional information from this image. Return only the numbers in this format: carbs: X, protein: X, calories: X, fat: X, where X represents values per 100 grams per serving."
+                },
+                {
+                  "inlineData": {
+                    "mimeType": "image/jpeg",
+                    "data": base64Image
+                  }
+                }
+              ]
+            }]
+          }),
+        );
+
+
+
+        print('Status code: ${response.statusCode}');
+        print('Response body: ${response.body}');
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final textResponse = data['candidates'][0]['content']['parts'][0]['text'];
+          final nutritionInfo = _parseGeminiResponse(textResponse);
+
+          // Update UI
+          if (dialogContext.mounted) {
+            Navigator.pop(dialogContext);  // Close loading dialog
+            setState(() {
+              per100gCarbsController.text = nutritionInfo['carbs']?.toString() ?? '0';
+              per100gProteinController.text = nutritionInfo['protein']?.toString() ?? '0';
+              per100gCaloriesController.text = nutritionInfo['calories']?.toString() ?? '0';
+              per100gFatController.text = nutritionInfo['fat']?.toString() ?? '0';
+              calculateNutritionForQuantity();
+            });
+          }
+        } else {
+          print('Error: ${response.statusCode}');
+          print('Response: ${response.body}');
+          throw Exception('Failed to process image');
+        }
+      }
+    } catch (e) {
+      if (dialogContext.mounted) {
+        Navigator.pop(dialogContext);
+        ScaffoldMessenger.of(dialogContext).showSnackBar(
+          SnackBar(
+            content: Text('Error processing image: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
-  void _initializeGemini() {
-    _geminiModel = GenerativeModel(
-      model: 'gemini-pro',
-      apiKey: 'AIzaSyDI7Bjn6HTZllGHPEtxdmLas9HNlNLnOco',
+// Helper method to parse Gemini response
+  Map<String, double> _parseGeminiResponse(String response) {
+    Map<String, double> nutritionValues = {
+      'carbs': 0,
+      'protein': 0,
+      'calories': 0,
+      'fat': 0,
+    };
+
+    try {
+      // Split response by commas and process each part
+      final parts = response.split(',').map((s) => s.trim()).toList();
+
+      for (var part in parts) {
+        // Remove any non-essential characters and split by colon
+        final keyValue = part.replaceAll(RegExp(r'[^a-zA-Z0-9:.]'), '').split(':');
+        if (keyValue.length == 2) {
+          final key = keyValue[0].trim().toLowerCase();
+          final value = double.tryParse(keyValue[1].trim()) ?? 0;
+
+          if (nutritionValues.containsKey(key)) {
+            nutritionValues[key] = value;
+          }
+        }
+      }
+
+      print('Parsed values: $nutritionValues'); // Debug print
+    } catch (e) {
+      print('Error parsing Gemini response: $e');
+    }
+    return nutritionValues;
+  }
+
+  double _extractNumberFromString(String text) {
+    final regex = RegExp(r'\d+\.?\d*');
+    final match = regex.firstMatch(text);
+    return match != null ? double.tryParse(match.group(0) ?? '0') ?? 0 : 0;
+  }
+
+// Dialog Methods
+  void _showAddMealDialog() {
+    // Variables for meal data
+    String mealName = '';
+    double mealQuantity = 0;
+    bool showNutritionFields = false;
+    List<FoodDetails> searchResults = [];
+    Timer? _debounce;
+    final FoodService _foodService = FoodService();
+
+    void calculateNutritionForQuantity() {
+      if (mealQuantity > 0) {
+        setState(() {
+          mealCarbs = double.parse(per100gCarbsController.text) * (mealQuantity / 100);
+          mealProtein = double.parse(per100gProteinController.text) * (mealQuantity / 100);
+          mealCalories = double.parse(per100gCaloriesController.text) * (mealQuantity / 100);
+          mealFat = double.parse(per100gFatController.text) * (mealQuantity / 100);
+        });
+      }
+    }
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black26,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: Colors.white,
+              elevation: 8,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Header
+                      _buildDialogHeader(context),
+                      const SizedBox(height: 24),
+
+                      // Search and Food Name Field
+                      _buildSearchField(setDialogState, _debounce, _foodService, searchResults),
+
+                      // Search Results List
+                      if (searchResults.isNotEmpty)
+                        _buildSearchResults(searchResults, setDialogState),
+
+                      // Quantity Field
+                      _buildQuantityField(setDialogState, mealQuantity),
+
+                      // Camera Section
+                      if (!showNutritionFields)
+                        _buildCameraSection(dialogContext),
+
+                      // Nutrition Value Fields
+                      _buildNutritionFields(setDialogState),
+
+                      // Calculated Values Display
+                      if (_shouldShowCalculatedValues())
+                        _buildCalculatedValues(),
+
+                      // Action Buttons
+                      _buildActionButtons(dialogContext, mealName, mealQuantity),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  bool _shouldShowCalculatedValues() {
+    final quantity = double.tryParse(quantityController.text) ?? 0;
+    final hasQuantity = quantity > 0;
+
+    final hasAnyNutrition =
+        (double.tryParse(per100gCarbsController.text) ?? 0) > 0 ||
+            (double.tryParse(per100gProteinController.text) ?? 0) > 0 ||
+            (double.tryParse(per100gCaloriesController.text) ?? 0) > 0 ||
+            (double.tryParse(per100gFatController.text) ?? 0) > 0;
+
+    return hasQuantity && hasAnyNutrition;
+  }
+
+  void calculateNutritionForQuantity() {
+    final quantity = double.tryParse(quantityController.text) ?? 0;
+    if (quantity > 0) {
+      final ratio = quantity / 100;
+      mealCarbs = (double.tryParse(per100gCarbsController.text) ?? 0) * ratio;
+      mealProtein = (double.tryParse(per100gProteinController.text) ?? 0) * ratio;
+      mealCalories = (double.tryParse(per100gCaloriesController.text) ?? 0) * ratio;
+      mealFat = (double.tryParse(per100gFatController.text) ?? 0) * ratio;
+    }
+  }
+
+// Helper widgets for the dialog
+  Widget _buildDialogHeader(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text(
+          'Add Meal',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchField(
+      StateSetter setDialogState,
+      Timer? debounce,
+      FoodService foodService,
+      List<FoodDetails> searchResults) {
+    return TextFormField(
+      controller: searchController,
+      decoration: ThemeConstants.inputDecoration(context).copyWith(
+        labelText: 'Food Name',
+        hintText: 'Type to search or add new food',
+        prefixIcon: const Icon(Icons.restaurant_menu),
+      ),
+      onChanged: (value) {
+        if (debounce?.isActive ?? false) debounce!.cancel();
+        debounce = Timer(const Duration(milliseconds: 500), () async {
+          final results = await foodService.searchFoods(value);
+          setDialogState(() {
+            searchResults.clear();
+            searchResults.addAll(results);
+          });
+        });
+      },
+    );
+  }
+
+  Widget _buildSearchResults(List<FoodDetails> searchResults, StateSetter setDialogState) {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 200),
+      margin: const EdgeInsets.only(top: 16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListView.builder(
+        shrinkWrap: true,
+        itemCount: searchResults.length,
+        itemBuilder: (context, index) {
+          final food = searchResults[index];
+          return ListTile(
+            title: Text(food.name),
+            subtitle: Text(
+              'per 100g: ${food.calories}kcal, P:${food.protein}g, C:${food.carbs}g, F:${food.fat}g',
+              style: const TextStyle(fontSize: 12),
+            ),
+            onTap: () {
+              setDialogState(() {
+                searchController.text = food.name;
+                per100gCarbsController.text = food.carbs.toString();
+                per100gProteinController.text = food.protein.toString();
+                per100gCaloriesController.text = food.calories.toString();
+                per100gFatController.text = food.fat.toString();
+                searchResults.clear();
+              });
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildQuantityField(StateSetter setDialogState, double mealQuantity) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: TextField(
+        controller: quantityController,
+        decoration: ThemeConstants.inputDecoration(context).copyWith(
+          labelText: 'Quantity (g)',
+          hintText: 'Enter amount in grams',
+          prefixIcon: const Icon(Icons.scale),
+        ),
+        keyboardType: TextInputType.number,
+        onChanged: (value) {
+          mealQuantity = double.tryParse(value) ?? 0;
+          if (mealQuantity > 0) {
+            calculateNutritionForQuantity();
+            setDialogState(() {});
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildCameraSection(BuildContext dialogContext) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Scan Nutrition Label',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Use your camera to scan the nutrition label',
+            style: TextStyle(fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () => _processImageWithAI(dialogContext),
+            icon: const Icon(Icons.camera_alt),
+            label: const Text('Scan Label'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 12,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
 
+  Widget _buildNutritionFields(StateSetter setDialogState) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          child: Text(
+            'Nutrition Values (per 100g):',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        _buildNutritionField(
+          controller: per100gCarbsController,
+          label: 'Carbs',
+          icon: Icons.grain,
+          onChanged: (value) => setDialogState(() {}),
+        ),
+        const SizedBox(height: 12),
+        _buildNutritionField(
+          controller: per100gProteinController,
+          label: 'Protein',
+          icon: Icons.egg,
+          onChanged: (value) => setDialogState(() {}),
+        ),
+        const SizedBox(height: 12),
+        _buildNutritionField(
+          controller: per100gCaloriesController,
+          label: 'Calories',
+          icon: Icons.local_fire_department,
+          onChanged: (value) => setDialogState(() {}),
+        ),
+        const SizedBox(height: 12),
+        _buildNutritionField(
+          controller: per100gFatController,
+          label: 'Fat',
+          icon: Icons.opacity,
+          onChanged: (value) => setDialogState(() {}),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNutritionField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    required Function(String) onChanged,
+  }) {
+    return TextFormField(
+      controller: controller,
+      decoration: ThemeConstants.inputDecoration(context).copyWith(
+        labelText: '$label per 100g',
+        prefixIcon: Icon(icon),
+        suffixText: label == 'Calories' ? 'kcal' : 'g',
+      ),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _buildCalculatedValues() {
+    final quantity = double.tryParse(quantityController.text) ?? 0;
+    if (quantity <= 0) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Calculated values for ${quantity}g:',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildCalculatedValueRow('Carbs', mealCarbs),
+          _buildCalculatedValueRow('Protein', mealProtein),
+          _buildCalculatedValueRow('Calories', mealCalories),
+          _buildCalculatedValueRow('Fat', mealFat),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalculatedValueRow(String label, double value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(
+            '${value.toStringAsFixed(1)}${label == 'Calories' ? ' kcal' : 'g'}',
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context, String mealName, double mealQuantity) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey[700]),
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton(
+            onPressed: _isLoading ? null : () => _handleAddMeal(context, mealName, mealQuantity),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: const Text('Add Meal'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleAddMeal(BuildContext context, String mealName, double mealQuantity) async {
+    if (searchController.text.isEmpty || quantityController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please fill in food name and quantity'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      setState(() => _isLoading = true);
+
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) => Dialog(
+          backgroundColor: Colors.white,
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            child: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Adding meal...'),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await _addMeal(
+        searchController.text,
+        per100gCarbsController.text,
+        per100gProteinController.text,
+        per100gCaloriesController.text,
+        per100gFatController.text,
+        quantityController.text,
+      );
+
+      // Clean up
+      _clearTextFields();
+      setState(() => _isLoading = false);
+
+      // Close all dialogs and show success message
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+        Navigator.of(context).pop(); // Close add meal dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Meal added successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to add meal: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _addMeal(
+      String name,
+      String carbs,
+      String protein,
+      String calories,
+      String fat,
+      String grams,
+      ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('user_id');
+
+    if (userId == null) {
+      throw Exception('User not logged in');
+    }
+
+    final uri = Uri.parse('https://func-fitapp-backend.azurewebsites.net/foods/')
+        .replace(queryParameters: {
+      'user_id': userId.toString(),
+      'grams': double.tryParse(grams)?.toString(),
+    });
+
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'name': name.toLowerCase(),
+        'carbs': double.tryParse(carbs) ?? 0.0,
+        'protein': double.tryParse(protein) ?? 0.0,
+        'calories': double.tryParse(calories) ?? 0.0,
+        'fat': double.tryParse(fat) ?? 0.0,
+      }),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception('Failed to add meal to server');
+    }
+
+    await _fetchTodaysFoods(); // Refresh the foods list
+  }
 
   Future<void> _fetchTodaysFoods() async {
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
       final today = DateTime.now();
-      final foodsByDate = await _weeklyFoodService.fetchWeeklyFoodLogs(
-        today,
-        today,
-      );
+      final foodsByDate = await _weeklyFoodService.fetchWeeklyFoodLogs(today, today);
 
       if (foodsByDate.containsKey(today.toIso8601String().split('T')[0])) {
         final foods = foodsByDate[today.toIso8601String().split('T')[0]]!;
+        foods.sort((a, b) => b.consumedAt.compareTo(a.consumedAt)); // Sort by most recent
         _updateTotals(foods);
         setState(() {
           todaysMeals = foods;
@@ -176,17 +829,8 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
       }
     } catch (e) {
       print('Error fetching today\'s foods: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
-  }
-
-  void _resetTotals() {
-    carbs = 0;
-    protein = 0;
-    calories = 0;
-    fat = 0;
   }
 
   void _updateTotals(List<FoodLog> foods) {
@@ -200,165 +844,162 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     }
   }
 
-  Future<Map<String, double>> _extractNutritionWithGemini(String text) async {
-    try {
-      final prompt = '''
-      Extract the following nutritional information from this text and return it in a structured format:
-      - Carbohydrates (in grams)
-      - Protein (in grams)
-      - Calories
-      - Fat (in grams)
-      
-      Text to analyze:
-      $text
-      
-      Return only the numbers for each category. If a value is not found, return 0.
-      ''';
+  void _resetTotals() {
+    carbs = 0;
+    protein = 0;
+    calories = 0;
+    fat = 0;
+  }
 
-      final content = [Content.text(prompt)];
-      final response = await _geminiModel.generateContent(content);
-      final responseText = response.text;
-
-      nutritionData = responseText!;
-      print('Raw Gemini Response: $nutritionData');
-
-      return _parseGeminiResponse(responseText);
-    } catch (e) {
-      print('Error using Gemini AI: $e');
-      return {
-        'carbs': 0,
-        'protein': 0,
-        'calories': 0,
-        'fat': 0,
-      };
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
-  }
 
-  Map<String, double> _parseGeminiResponse(String response) {
-    Map<String, double> nutritionValues = {
-      'carbs': 0,
-      'protein': 0,
-      'calories': 0,
-      'fat': 0,
-    };
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: Colors.grey[50],
+      drawer: _buildDrawer(),
+      appBar: _buildAppBar(),
+      body: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Theme.of(context).colorScheme.primary.withOpacity(0.4),
+              Colors.white,
+            ],
+          ),
+        ),
+        child: Column(
+          children: [
+            // Overview Section
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildOverviewHeader(),
+                  const SizedBox(height: 20),
+                  if (todaysMeals.isNotEmpty)
+                    _buildMacroOverview()
+                  else
+                    _buildEmptyState(),
+                ],
+              ),
+            ),
 
-    try {
-      final lines = response.split('\n');
-      for (var line in lines) {
-        line = line.toLowerCase();
-        if (line.contains('carb')) {
-          nutritionValues['carbs'] = _extractNumberFromString(line);
-        } else if (line.contains('protein')) {
-          nutritionValues['protein'] = _extractNumberFromString(line);
-        } else if (line.contains('calor')) {
-          nutritionValues['calories'] = _extractNumberFromString(line);
-        } else if (line.contains('fat')) {
-          nutritionValues['fat'] = _extractNumberFromString(line);
-        }
-      }
-    } catch (e) {
-      print('Error parsing Gemini response: $e');
-    }
-    return nutritionValues;
-  }
-
-  double _extractNumberFromString(String text) {
-    final regex = RegExp(r'\d+\.?\d*');
-    final match = regex.firstMatch(text);
-    return match != null ? double.tryParse(match.group(0) ?? '0') ?? 0 : 0;
-  }
-
-
-  void _showLoadingDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.white,
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                Text(
-                  'Adding meal...',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey[800],
+            // Meals List
+            if (todaysMeals.isNotEmpty)
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(24),
+                  itemCount: todaysMeals.length,
+                  itemBuilder: (context, index) => _buildMealCard(
+                    todaysMeals[todaysMeals.length - 1 - index],
+                    index,
                   ),
                 ),
-              ],
-            ),
-          ),
-        );
-      },
+              ),
+          ],
+        ),
+      ),
     );
   }
 
-  Future<void> _addMeal(
-      String name,
-      String mealCarbs,
-      String mealProtein,
-      String mealCalories,
-      String mealFat,
-      String grams
-      ) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getInt('user_id');
-
-      if (userId == null) {
-        print('User ID not found, logging out...');
-        if (mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-                (route) => false,
-          );
-        }
-        return;
-      }
-
-      final baseUrl = 'https://func-fitapp-backend.azurewebsites.net/foods/';
-      final uri = Uri.parse(baseUrl).replace(
-        queryParameters: {
-          'user_id': userId.toString(),
-          'grams': double.tryParse(grams)?.toString(),//wha user inputs
-        },
-      );
-      //100
-      final response = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'name': name.toLowerCase(),
-          'carbs': double.tryParse(mealCarbs) ?? 0.0, // Convert to double
-          'protein': double.tryParse(mealProtein) ?? 0.0, // Convert to double
-          'calories': double.tryParse(mealCalories) ?? 0.0, // Convert to double
-          'fat': double.tryParse(mealFat) ?? 0.0, // Convert to double
-        }),
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        await _fetchTodaysFoods(); // Refresh the foods list from backend
-      } else {
-        throw Exception('Failed to add meal to server');
-      }
-    } catch (e) {
-      print('Error adding meal: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add meal: $e')),
-        );
-      }
-    }
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      elevation: 0,
+      backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      leading: Builder(
+        builder: (context) => IconButton(
+          icon: const Icon(Icons.menu),
+          onPressed: () => Scaffold.of(context).openDrawer(),
+        ),
+      ),
+      title: const Text(
+        'Macro Tracker',
+        style: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      centerTitle: true,
+    );
   }
 
+  Widget _buildOverviewHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text(
+          'Today\'s Overview',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+        if (todaysMeals.isNotEmpty)
+          TextButton.icon(
+            icon: Icon(
+              Icons.add,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            label: const Text(
+              'Add Meal',
+              style: TextStyle(color: Colors.black),
+            ),
+            onPressed: _showAddMealDialog,
+          ),
+      ],
+    );
+  }
 
-  Widget _buildMacroCard(String title, double value, double percentage, Color color) {
+  Widget _buildMacroOverview() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.grey.shade400,
+            Colors.white,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: GridView.count(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 1.6,
+        children: [
+          _buildMacroCard('Carbs', carbs, Colors.blue),
+          _buildMacroCard('Protein', protein, Colors.red),
+          _buildMacroCard('Calories', calories, Colors.orange),
+          _buildMacroCard('Fat', fat, Colors.green),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMacroCard(String title, double value, Color color) {
     double getGoalValue(String title) {
       if (title == 'Carbs') {
         return _recommendedIntake?.carbs ?? 0;
@@ -395,8 +1036,6 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
               Text(
                 'Goal: ${goalValue.toStringAsFixed(0)}${title == 'Calories' ? 'kcal' : 'g'}',
@@ -457,71 +1096,107 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     );
   }
 
+  Widget _buildEmptyState() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.restaurant_menu,
+              size: 80,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No meals added yet',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.add),
+              label: const Text('Add First Meal'),
+              onPressed: _showAddMealDialog,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildMealCard(FoodLog meal, int index) {
-    // Calculate nutrition values based on the grams consumed
     final ratio = meal.grams / 100;
     final actualCarbs = meal.food.carbs * ratio;
     final actualProtein = meal.food.protein * ratio;
     final actualCalories = meal.food.calories * ratio;
     final actualFat = meal.food.fat * ratio;
 
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.grey.shade100, // Grey silver at top
-              Colors.white, // White at bottom
-            ],
-          ),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.grey.shade100,
+            Colors.white,
           ],
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    meal.food.name,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    '${meal.grams}g',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildMealNutrient('Carbs', actualCarbs, Colors.blue),
-                  _buildMealNutrient('Protein', actualProtein, Colors.red),
-                  _buildMealNutrient('Calories', actualCalories, Colors.orange),
-                  _buildMealNutrient('Fat', actualFat, Colors.green),
-                ],
-              ),
-            ],
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
           ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  meal.food.name,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  '${meal.grams}g',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildMealNutrient('Carbs', actualCarbs, Colors.blue),
+                _buildMealNutrient('Protein', actualProtein, Colors.red),
+                _buildMealNutrient('Calories', actualCalories, Colors.orange),
+                _buildMealNutrient('Fat', actualFat, Colors.green),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -551,800 +1226,117 @@ class _MacroTrackingPageState extends State<MacroTrackingPage> {
     );
   }
 
-  void _clearTextFields() {
-    per100gCarbsController.clear();
-    per100gProteinController.clear();
-    per100gCaloriesController.clear();
-    per100gFatController.clear();
-    searchController.clear();
-    quantityController.clear();
-  }
-
-
-
-  void _showAddMealDialog() {
-    // Variables for meal data
-    String mealName = '';
-    double mealQuantity = 0;
-    bool showNutritionFields = false;
-    List<FoodDetails> searchResults = [];
-    Timer? _debounce;
-
-    // Controllers
-
-
-    // Services
-    final FoodService _foodService = FoodService();
-
-    // Nutrition values
-    double per100gCarbs = 0;
-    double per100gProtein = 0;
-    double per100gCalories = 0;
-    double per100gFat = 0;
-
-    // Helper function to calculate nutrition based on quantity
-    void calculateNutritionForQuantity() {
-      if (mealQuantity > 0) {
-        double ratio = mealQuantity / 100;
-        mealCarbs = per100gCarbs * ratio;
-        mealProtein = per100gProtein * ratio;
-        mealCalories = per100gCalories * ratio;
-        mealFat = per100gFat * ratio;
-      }
-    }
-
-    // Helper function to update nutrition values from search results
-    void updateNutritionValues(FoodDetails food) {
-      per100gCarbs = food.carbs;
-      per100gProtein = food.protein;
-      per100gCalories = food.calories;
-      per100gFat = food.fat;
-
-      per100gCarbsController.text = food.carbs.toString();
-      per100gProteinController.text = food.protein.toString();
-      per100gCaloriesController.text = food.calories.toString();
-      per100gFatController.text = food.fat.toString();
-
-      mealName = food.name;
-      searchController.text = food.name;
-
-      // Calculate values if quantity is already entered
-      if (mealQuantity > 0) {
-        calculateNutritionForQuantity();
-      }
-    }
-
-
-    showDialog(
-      context: context,
-      barrierColor: Colors.black26,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Dialog(
-              backgroundColor: Colors.white,
-              elevation: 8,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Header
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Add Meal',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () => Navigator.of(context).pop(),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Search Field with Auto-complete
-                      TextFormField(
-                        controller: searchController,
-                        decoration:
-                            ThemeConstants.inputDecoration(context).copyWith(
-                          labelText: 'Food Name',
-                          hintText: 'Type to search or add new food',
-                          prefixIcon: const Icon(Icons.restaurant_menu),
-                        ),
-                        onChanged: (value) {
-                          mealName = value;
-                          if (_debounce?.isActive ?? false) _debounce!.cancel();
-                          _debounce = Timer(const Duration(milliseconds: 500),
-                              () async {
-                            final results =
-                                await _foodService.searchFoods(value);
-                            setDialogState(() {
-                              searchResults = results;
-                            });
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Search Results
-                      if (searchResults.isNotEmpty) ...[
-                        Container(
-                          constraints: const BoxConstraints(maxHeight: 200),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: ListView.builder(
-                            shrinkWrap: true,
-                            itemCount: searchResults.length,
-                            itemBuilder: (context, index) {
-                              final food = searchResults[index];
-                              return ListTile(
-                                title: Text(food.name),
-                                subtitle: Text(
-                                  'per 100g: ${food.calories}kcal, P:${food.protein}g, C:${food.carbs}g, F:${food.fat}g',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                                onTap: () {
-                                  setDialogState(() {
-                                    updateNutritionValues(food);
-                                    showNutritionFields = true;
-                                    searchResults = [];
-                                    calculateNutritionForQuantity();
-                                  });
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Quantity Field
-                      TextField(
-                        controller: quantityController,
-                        decoration:
-                            ThemeConstants.inputDecoration(context).copyWith(
-                          labelText: 'Quantity',
-                          hintText: 'Enter quantity in grams',
-                          prefixIcon: const Icon(Icons.scale),
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (value) {
-                          mealQuantity = double.tryParse(value) ?? 0;
-                          calculateNutritionForQuantity();
-                          setDialogState(() {});
-                        },
-                      ),
-                      const SizedBox(height: 24),
-                      // Camera Scanning Section
-                      if (!showNutritionFields) ...[
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .primary
-                                  .withOpacity(0.2),
-                            ),
-                          ),
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Scan Nutrition Label',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Use your camera to scan the nutrition label from your food package',
-                                style: TextStyle(
-                                  color: Colors.grey[700],
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              ElevatedButton.icon(
-                                onPressed: () async {
-                                  final XFile? image = await _picker.pickImage(
-                                    source: ImageSource.camera,
-                                  );
-                                  if (image != null) {
-                                    final inputImage =
-                                        InputImage.fromFilePath(image.path);
-                                    final RecognizedText recognizedText =
-                                        await _textRecognizer
-                                            .processImage(inputImage);
-
-                                    final nutritionInfo =
-                                        await _extractNutritionWithGemini(
-                                            recognizedText.text);
-
-                                    setDialogState(() {
-                                      per100gCarbs =
-                                          nutritionInfo['carbs'] ?? 0;
-                                      per100gProtein =
-                                          nutritionInfo['protein'] ?? 0;
-                                      per100gCalories =
-                                          nutritionInfo['calories'] ?? 0;
-                                      per100gFat = nutritionInfo['fat'] ?? 0;
-
-                                      per100gCarbsController.text =
-                                          per100gCarbs.toString();
-                                      per100gProteinController.text =
-                                          per100gProtein.toString();
-                                      per100gCaloriesController.text =
-                                          per100gCalories.toString();
-                                      per100gFatController.text =
-                                          per100gFat.toString();
-
-                                      showNutritionFields = true;
-                                      calculateNutritionForQuantity();
-                                    });
-                                  }
-                                },
-                                icon: const Icon(Icons.camera_alt),
-                                label: const Text('Scan Nutrition Label'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor:
-                                      Theme.of(context).colorScheme.primary,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        const Text(
-                          'Or enter values manually:',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-
-                      // Nutrition Fields
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: per100gCarbsController,
-                          decoration:
-                              ThemeConstants.inputDecoration(context).copyWith(
-                            labelText: 'Carbs per 100g',
-                            prefixIcon: const Icon(Icons.grain),
-                          ),
-                          keyboardType: TextInputType.number,
-                          onChanged: (value) {
-                            per100gCarbs = double.tryParse(value) ?? 0;
-                            calculateNutritionForQuantity();
-                            setDialogState(() {});
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: per100gProteinController,
-                          decoration:
-                              ThemeConstants.inputDecoration(context).copyWith(
-                            labelText: 'Protein per 100g',
-                            prefixIcon: const Icon(Icons.egg),
-                          ),
-                          keyboardType: TextInputType.number,
-                          onChanged: (value) {
-                            per100gProtein = double.tryParse(value) ?? 0;
-                            calculateNutritionForQuantity();
-                            setDialogState(() {});
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: per100gCaloriesController,
-                          decoration:
-                              ThemeConstants.inputDecoration(context).copyWith(
-                            labelText: 'Calories per 100g',
-                            prefixIcon: const Icon(Icons.local_fire_department),
-                          ),
-                          keyboardType: TextInputType.number,
-                          onChanged: (value) {
-                            per100gCalories = double.tryParse(value) ?? 0;
-                            calculateNutritionForQuantity();
-                            setDialogState(() {});
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: per100gFatController,
-                          decoration:
-                              ThemeConstants.inputDecoration(context).copyWith(
-                            labelText: 'Fat per 100g',
-                            prefixIcon: const Icon(Icons.opacity),
-                          ),
-                          keyboardType: TextInputType.number,
-                          onChanged: (value) {
-                            per100gFat = double.tryParse(value) ?? 0;
-                            calculateNutritionForQuantity();
-                            setDialogState(() {});
-                          },
-                        ),
-
-                      // Calculated Values Display
-                      if (mealQuantity > 0 &&
-                          (per100gCarbs > 0 ||
-                              per100gProtein > 0 ||
-                              per100gCalories > 0 ||
-                              per100gFat > 0)) ...[
-                        const SizedBox(height: 24),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: ThemeConstants.cardDecoration,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Calculated values for ${mealQuantity}g:',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Carbs: ${mealCarbs.toStringAsFixed(1)}g',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              Text(
-                                'Protein: ${mealProtein.toStringAsFixed(1)}g',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              Text(
-                                'Calories: ${mealCalories.toStringAsFixed(1)} kcal',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              Text(
-                                'Fat: ${mealFat.toStringAsFixed(1)}g',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      // Action Buttons
-                      const SizedBox(height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
-                            ),
-                            child: Text(
-                              'Cancel',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.secondary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-
-                          ElevatedButton(
-                            onPressed: _isLoading
-                                ? null
-                                : () async {
-                              if (mealName.isNotEmpty && mealQuantity > 0) {
-                                // Show loading dialog
-                                _showLoadingDialog(context);
-
-                                try {
-                                  await _addMeal(
-                                    mealName,
-                                    per100gCarbsController.text,
-                                    per100gProteinController.text,
-                                    per100gCaloriesController.text,
-                                    per100gFatController.text,
-                                    quantityController.text,
-                                  );
-
-                                  _clearTextFields();
-
-                                  // Close loading dialog
-                                  if (context.mounted) {
-                                    Navigator.of(context).pop(); // Close loading dialog
-                                    Navigator.of(context).pop(); // Close add meal dialog
-                                  }
-
-                                  // Show success message
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Meal added successfully'),
-                                        backgroundColor: Colors.green,
-                                      ),
-                                    );
-                                  }
-                                } catch (e) {
-                                  // Close loading dialog
-                                  if (context.mounted) {
-                                    Navigator.of(context).pop(); // Close loading dialog
-                                  }
-
-                                  // Show error message
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Failed to add meal: $e'),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                  }
-                                }
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Theme.of(context).colorScheme.primary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Text(
-                              'Add Meal',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    // Cleanup
-    addPostFrameCallback((_) {
-      _debounce?.cancel();
-    });
-  }
-
-// Helper method for cleanup
-  void addPostFrameCallback(void Function(Duration) callback) {
-    WidgetsBinding.instance.addPostFrameCallback(callback);
-  }
-
-  double get totalMacros => carbs + protein + fat;
-
-  @override
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    double carbsPercentage = protein + carbs + fat > 0 ? (carbs / (protein + carbs + fat)) * 100 : 0;
-    double proteinPercentage = protein + carbs + fat > 0 ? (protein / (protein + carbs + fat)) * 100 : 0;
-    double fatPercentage = protein + carbs + fat > 0 ? (fat / (protein + carbs + fat)) * 100 : 0;
-
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: Colors.grey[50],
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.grey.shade900, // Grey silver at top
-                    Colors.white, // White at bottom
-                  ],
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const CircleAvatar(
-                    radius: 40,
-                    backgroundColor: Colors.white,
-                    child: Icon(Icons.person, size: 40, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Welcome, $_username!',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+  Widget _buildDrawer() {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.grey.shade900,
+                  Colors.white,
                 ],
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.person),
-              title: const Text('Profile'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const UserPage()),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.calendar_today),
-              title: const Text('Calendar'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => DailyPastPage()),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.analytics),
-              title: const Text('Analytics'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => WeeklyFoodLogs()),
-                );
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.chat),
-              title: const Text('Chat'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => ChatPage()),
-                );
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Logout', style: TextStyle(color: Colors.red)),
-              onTap: () async {
-                Navigator.pop(context);
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.remove('user_id');
-                if (mounted) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
-                        (route) => false,
-                  );
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        leading: Builder(
-          builder: (context) {
-            return IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () => Scaffold.of(context).openDrawer(),
-            );
-          },
-        ),
-        title: const Text(
-          'Macro Tracker',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        centerTitle: true,
-      ),
-      body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.4),
-              Colors.white,
-            ],
-          ),
-        ),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Today\'s Overview',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  if (todaysMeals.isNotEmpty) ...[
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.grey.shade400, // Grey silver at top
-                            Colors.white, // White at bottom
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 10,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 1.6,
-                        children: [
-                          _buildMacroCard('Carbs', carbs, carbsPercentage, Colors.blue),
-                          _buildMacroCard('Protein', protein, proteinPercentage, Colors.red),
-                          _buildMacroCard('Calories', calories, 0, Colors.orange),
-                          _buildMacroCard('Fat', fat, fatPercentage, Colors.green),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Meals Today',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                          ),
-                        ),
-                        TextButton.icon(
-                          icon: Icon(
-                            Icons.add,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          label: Text(
-                            'Add Meal',
-                            style: TextStyle(
-                              color: Colors.black,
-                            ),
-                          ),
-                          onPressed: _showAddMealDialog,
-                        ),
-                      ],
-                    ),
-                  ] else ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 40),
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.restaurant_menu,
-                              size: 80,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 24),
-                            Text(
-                              'No meals added yet',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[700],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            ElevatedButton.icon(
-                              icon: const Icon(Icons.add),
-                              label: const Text('Add First Meal'),
-                              onPressed: _showAddMealDialog,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (todaysMeals.isNotEmpty)
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(24),
-                  itemCount: todaysMeals.length,
-                  itemBuilder: (context, index) => _buildMealCard(
-                    todaysMeals[todaysMeals.length - 1 - index],
-                    index,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircleAvatar(
+                  radius: 40,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.person, size: 40, color: Colors.grey),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Welcome, $_username!',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-          ],
-        ),
+              ],
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.person,
+            title: 'Profile',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const UserPage()),
+              );
+            },
+          ),
+          _buildDrawerItem(
+            icon: Icons.calendar_today,
+            title: 'Calendar',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => DailyPastPage()),
+              );
+            },
+          ),
+          _buildDrawerItem(
+            icon: Icons.analytics,
+            title: 'Analytics',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const WeeklyFoodLogs()),
+              );
+            },
+          ),
+          const Divider(),
+          _buildDrawerItem(
+            icon: Icons.logout,
+            title: 'Logout',
+            color: Colors.red,
+            onTap: () async {
+              Navigator.pop(context);
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('user_id');
+              if (mounted) {
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                      (route) => false,
+                );
+              }
+            },
+          ),
+        ],
       ),
     );
   }
 
-  @override
-  void dispose() {
-    _textRecognizer.close();
-    super.dispose();
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: color),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: color,
+          fontWeight: color == null ? FontWeight.normal : FontWeight.w500,
+        ),
+      ),
+      onTap: onTap,
+    );
   }
+
 }
+
+

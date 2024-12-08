@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:fit_app/macro_tracking_page.dart';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'macro_tracking_page.dart';
 
 // Constants for styling
 class RegistrationConstants {

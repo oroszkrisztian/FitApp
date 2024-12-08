@@ -24,17 +24,56 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // MultiDex support if needed for large apps
+        multiDexEnabled true
     }
 
     buildTypes {
         release {
-            minifyEnabled false
-            shrinkResources false
+            // Enable minification and resource shrinking to reduce app size
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+
+
         }
+        debug {
+            debuggable true
+        }
+    }
+
+    // Splits configuration for smaller APKs
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            universalApk false
+        }
+    }
+
+    packagingOptions {
+        // Avoid duplicate classes in dependencies
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE.txt'
     }
 }
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Core dependencies
+    implementation "androidx.multidex:multidex:2.0.1"
+
+    // ML Kit dependencies for text recognition (add only those you need)
+    implementation 'com.google.mlkit:text-recognition:16.1.1'
+    implementation 'com.google.mlkit:text-recognition-chinese:16.1.0'
+    implementation 'com.google.mlkit:text-recognition-devanagari:16.1.0'
+    implementation 'com.google.mlkit:text-recognition-japanese:16.1.0'
+    implementation 'com.google.mlkit:text-recognition-korean:16.1.0'
 }

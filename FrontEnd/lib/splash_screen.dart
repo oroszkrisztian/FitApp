@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:fit_app/login_screen.dart';
-import 'package:fit_app/macro_tracking_page.dart';
+
+import 'login_screen.dart';
+import 'macro_tracking_page.dart';
 import 'models/user_model.dart'; // Import the User model
 
 import 'dart:async';

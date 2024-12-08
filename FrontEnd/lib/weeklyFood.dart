@@ -1,7 +1,8 @@
-import 'package:fit_app/services/recommended_intake.dart';
-import 'package:fit_app/services/weekly_food_service.dart';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:foodex/services/recommended_intake.dart';
+import 'package:foodex/services/weekly_food_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' show max;
