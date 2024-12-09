@@ -1,6 +1,8 @@
-import 'package:fit_app/register_screen.dart';
+
 import 'package:flutter/material.dart';
+import 'package:foodex/register_screen.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'macro_tracking_page.dart';
 
@@ -14,16 +16,63 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  @override
+  void initState() {
+    super.initState();
+    _checkLoginStatus();
+  }
+
+  Future<void> _checkLoginStatus() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final int? userId = prefs.getInt('user_id');
+
+    if (userId != null && mounted) {
+      // User is already logged in, navigate to macro tracking page
+      _navigateToMacroTracking(context);
+    }
+  }
 
   Future<void> _login(BuildContext context) async {
-    // Directly navigate to the macro tracking page
-    //_navigateToMacroTracking(context);
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Center(
+          child: Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  'Logging in...',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
 
-    /* Original backend authentication code*/
     final String username = _usernameController.text;
     final String password = _passwordController.text;
 
-    final String baseUrl = 'https://func-fitapp-backend.azurewebsites.net/login/';
+    final String baseUrl =
+        'https://func-fitapp-backend.azurewebsites.net/login/';
     final uri = Uri.parse(baseUrl).replace(queryParameters: {
       'email': username,
       'password': password,
@@ -37,26 +86,38 @@ class _LoginScreenState extends State<LoginScreen> {
         },
       );
 
-      print("username: "+username);
-      print("password: "+password);
-      print("Response status: ${response.statusCode}");
-      print("Response body: ${response.body}");
+      // Close loading dialog
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        print('Login successful: $data');
-        _navigateToMacroTracking(context);
+
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('user_id', data['user_id']);
+
+        if (mounted) {
+          _navigateToMacroTracking(context);
+        }
       } else if (response.statusCode == 401) {
-        print('Login failed: Invalid credentials');
         _showErrorDialog(context, 'Invalid email or password');
       } else {
-        print('Login failed: ${response.body}');
         _showErrorDialog(context, 'Login failed: ${response.body}');
       }
     } catch (e) {
-      print('Error: $e');
+      // Close loading dialog if error occurs
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
       _showErrorDialog(context, 'Error connecting to server');
     }
+  }
+
+  // Add logout method
+  static Future<void> logout() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove('user_id');
   }
 
   void _showErrorDialog(BuildContext context, String message) {
@@ -78,7 +139,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _navigateToMacroTracking(BuildContext context) {
-    Navigator.push(
+    Navigator.pushReplacement(
+      // Changed to pushReplacement to prevent going back to login
       context,
       MaterialPageRoute(builder: (context) => const MacroTrackingPage()),
     );
@@ -88,7 +150,6 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gym App Login'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Padding(
