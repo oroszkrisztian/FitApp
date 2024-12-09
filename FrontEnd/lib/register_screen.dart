@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:foodex/login_screen.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:flutter/material.dart';
@@ -607,7 +608,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       Navigator.pushAndRemoveUntil(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const MacroTrackingPage(),
+                          builder: (context) => const LoginScreen(),
                         ),
                             (route) => false,
                       );
